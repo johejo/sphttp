@@ -74,12 +74,15 @@ class SplitDownloader(object):
         for host_id in self._host_ids:
             self._host_id_queue.put(host_id)
 
-        if self._parallel_setting:
+        if http2_multiple_stream_setting:
             self._max_workers = None
             self._set_multi_stream()
 
         else:
             self._max_workers = len(self._hosts)
+
+        random.shuffle(self._host_id_queue.queue)
+
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._future_body = None
 
@@ -147,7 +150,6 @@ class SplitDownloader(object):
             for _ in range(parallel_num - 1):
                 self._host_id_queue.put(target_host_id)
         self._max_workers = s
-        random.shuffle(self._host_id_queue.queue)
 
     def _set_params(self):
 
