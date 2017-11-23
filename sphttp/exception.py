@@ -1,14 +1,26 @@
-class FileSizeError(Exception):
+class SphttpException(Exception):
     pass
 
 
-class FileNotFound(Exception):
+class FileSizeError(SphttpException):
     pass
 
 
-class InvalidStatusCode(Exception):
+class StatusCodeError(SphttpException):
     pass
 
 
-class IncompleteError(Exception):
+class InvalidStatusCode(SphttpException):
+    pass
+
+
+class IncompleteError(SphttpException):
+    pass
+
+
+class NoContentLength(SphttpException):
+    pass
+
+
+class NoAcceptRanges(SphttpException):
     pass

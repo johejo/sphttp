@@ -21,16 +21,22 @@ DEFAULT_SPLIT_SIZE = 10 ** 6
 class SplitDownloader(object):
     def __init__(self, urls, *,
                  split_size=DEFAULT_SPLIT_SIZE,
-                 logger=local_logger
+                 logger=local_logger,
                  ):
 
         self._logger = logger
 
-        length = [get_length(url) for url in urls]
-        if map_all(length) is False:
-            raise FileSizeError
+        length_list = []
+        for i, u in enumerate(urls):
+            url, length = get_length(url=u)
+            if u != url:
+                urls[i] = url
+            length_list.append(length)
 
-        self._length = length[0]
+        if map_all(length_list) is False:
+            raise FileSizeError('File size differs for each host.')
+
+        self._length = length_list[0]
 
         self._hosts = [urlparse(url).hostname for url in urls]
         self._host_ids = [i for i in range(len(self._hosts))]
@@ -107,18 +113,13 @@ class SplitDownloader(object):
 
         conn.request('GET', parsed_url.path, headers=param['headers'])
         self._logger.debug('Send request: host_id={}, index={}'.format(host_id, param['index']))
-        while True:
-            try:
-                resp = conn.get_response()
-                break
-            except ConnectionResetError:
-                self._logger.debug('Reset connection')
-                conn = HTTPConnection(self._hosts[host_id])
-                self._conns[host_id] = conn
+
+        resp = conn.get_response()
 
         if resp.status != 206:
             self._logger.debug('Invalid status_code: host={}, status={}'.format(self._hosts[host_id], resp.status))
             raise InvalidStatusCode
+
         range_header = resp.headers['Content-Range'][0].decode()
         order = get_order(range_header, self._split_size)
         body = resp.read()
@@ -182,7 +183,7 @@ class SplitDownloader(object):
             time.sleep(0.1)
             return self.__next__()
 
-    def get_logs(self):
+    def get_trace_data(self):
         if self._is_completed:
             return self._total_thp, self._return_counts, self._stack_counts, self._host_counts, self._log
         else:

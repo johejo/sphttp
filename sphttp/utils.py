@@ -1,15 +1,31 @@
 import requests
 
-from .exception import FileNotFound
+from .exception import StatusCodeError, NoContentLength, NoAcceptRanges
+
+REDIRECT_STATUS = [301, 302, 303, 307, 308]
 
 
 def get_length(url):
     resp = requests.head(url, verify=False)
-    if resp.status_code == 200:
-        length = int(resp.headers['content-length'])
+    status = resp.status_code
+    if status == 200:
+        try:
+            length = int(resp.headers['Content-Length'])
+        except KeyError:
+            raise NoContentLength('Host does not support Content-Length header.')
+
+        try:
+            resp.headers['Accept-Ranges']
+        except KeyError:
+            raise NoAcceptRanges('Host does not support Accept-Ranges header.')
+
+    elif status in REDIRECT_STATUS:
+        location = resp.headers['Location']
+        return get_length(url=location)
+
     else:
-        raise FileNotFound
-    return length
+        raise StatusCodeError('Status code: {}. Failed URL: {}'.format(status, url))
+    return url, length
 
 
 def map_all(es):
