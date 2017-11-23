@@ -24,3 +24,11 @@ class NoContentLength(SphttpException):
 
 class NoAcceptRanges(SphttpException):
     pass
+
+
+class SchemeError(SphttpException):
+    pass
+
+
+class DuplicatedStartError(SphttpException):
+    pass
