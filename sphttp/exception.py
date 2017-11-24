@@ -28,3 +28,7 @@ class NoAcceptRanges(SphttpException):
 
 class SchemeError(SphttpException):
     pass
+
+
+class DelayRequestAlgorithmError(SphttpException):
+    pass

@@ -1,5 +1,4 @@
 from urllib.parse import urlparse
-import ssl
 
 import requests
 from hyper import HTTP20Connection

@@ -11,8 +11,9 @@ from hyper import HTTPConnection, HTTP20Connection, HTTP20Response
 from hyper.tls import init_context
 
 from .utils import get_length, map_all, get_order, get_port
+from .algorithm import DelayRequestAlgorithm
 from .exception import (
-    FileSizeError, InvalidStatusCode, IncompleteError
+    FileSizeError, InvalidStatusCode, IncompleteError, DelayRequestAlgorithmError
 )
 
 local_logger = getLogger(__name__)
@@ -26,6 +27,7 @@ class SplitDownloader(object):
                  verify=False,
                  split_size=DEFAULT_SPLIT_SIZE,
                  http2_multiple_stream_setting=None,
+                 delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
                  logger=local_logger,
                  ):
 
@@ -85,13 +87,20 @@ class SplitDownloader(object):
 
         random.shuffle(self._host_id_queue.queue)
 
+        self._delay_request_algorithm = delay_request_algorithm
+        if self._delay_request_algorithm is DelayRequestAlgorithm.ESTIMATE_DIFFERENCES:
+            self._previous_counts = {host_id: 0 for host_id in self._host_ids}
+        else:
+            self._previous_counts = None
+
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._future_body = None
 
         self._data = [None for _ in range(self._request_num)]
         self._received_index = 0
+        self._receive_count = 0
 
-        self._host_counts = {host_id: {'count': 0, 'host': host} for host_id, (host, _) in self._hosts.items()}
+        self._host_counts = {host_id: 0 for host_id in self._host_ids}
         self._return_counts = []
         self._stack_counts = []
         self._total_thp = 0
@@ -104,16 +113,16 @@ class SplitDownloader(object):
 
         self._logger.debug('Init')
 
-    def _start(self):
-        self._begin_time = time.monotonic()
-        self._future_body = [self._executor.submit(self._get_body) for _ in range(self._request_num)]
-
     def get_trace_data(self):
         if self._is_completed:
-            return self._total_thp, self._return_counts, self._stack_counts, self._host_counts, self._log
+            return self._hosts, self._total_thp, self._return_counts, self._stack_counts, self._host_counts, self._log
         else:
             message = 'Cannot return trace data before the download is completed'
             raise IncompleteError(message)
+
+    def _start(self):
+        self._begin_time = time.monotonic()
+        self._future_body = [self._executor.submit(self._get_body) for _ in range(self._request_num)]
 
     def _close(self):
         self._executor.shutdown()
@@ -163,18 +172,47 @@ class SplitDownloader(object):
             self._params.append({'index': i, 'headers': {'Range': 'bytes={0}-{1}'.format(begin, end)}})
             begin += self._split_size
 
+    def _get_delay_request_degree(self, host_id):
+        if self._delay_request_algorithm is DelayRequestAlgorithm.NORMAL:
+            return 0
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.ESTIMATE_DIFFERENCES:
+            return self._calc_estimate_differences(host_id)
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.LINEAR_TO_HOST_USAGE_COUNT:
+            return
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_DOWNWARD_TO_HOST_USAGE_COUNT:
+            return
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_UPWARD_TO_HOST_USAGE_COUNT:
+            return
+        else:
+            message = '{} is an unsupported algorithm.'.format(self._delay_request_algorithm.name)
+            raise DelayRequestAlgorithmError(message)
+
+    def _calc_estimate_differences(self, host_id):
+        current_count = self._receive_count
+        previous_count = self._previous_counts[host_id]
+        diff = current_count - previous_count
+        self._previous_counts[host_id] = current_count
+
+        self._logger.debug('Diff: host={}, current_count={}, previous_count={}, diff={}'
+                           .format(self._hosts[host_id], current_count, previous_count, diff))
+
+        if diff > len(self._urls):
+            return diff
+        else:
+            return 0
+
     def _get_body(self):
         host_id = self._host_id_queue.get()
         conn = self._conns[host_id]  # type: HTTPConnection
         parsed_url = urlparse(self._urls[host_id])
 
-        x = 0
+        skip = self._get_delay_request_degree(host_id)
         while True:
             try:
-                param = self._params.pop(x)
+                param = self._params.pop(skip)
                 break
             except IndexError:
-                x -= 1
+                skip -= 1
 
         try:
             if self._host_http2_flags[host_id]:
@@ -185,8 +223,8 @@ class SplitDownloader(object):
                 conn.request('GET', parsed_url.path, headers=param['headers'])
                 resp = conn.get_response()
 
-            self._logger.debug('Send request: host_id={}, host={}, index={}, stream_id={}'
-                               .format(host_id, self._hosts[host_id], param['index'], stream_id))
+            self._logger.debug('Send request: host_id={}, host={}, index={}, stream_id={}, skip={}'
+                               .format(host_id, self._hosts[host_id], param['index'], stream_id, skip))
 
             if resp.status != 206:
                 message = 'status_code: {}, host: {}'.format(resp.status, self._hosts[host_id])
@@ -204,7 +242,7 @@ class SplitDownloader(object):
             self._logger.debug('ConnectionRestError: host_id={}, host={}:{}'.format(host_id, host, port))
             conn = HTTPConnection(host + ':' + str(port), ssl_context=self._context)
             self._conns[host_id] = conn
-            self._host_counts[host_id]['count'] = 0
+            self._host_counts[host_id] = 0
             self._host_id_queue.put(host_id)
             self._params.insert(0, param)
             return self._get_body()
@@ -213,8 +251,9 @@ class SplitDownloader(object):
                            .format(host_id, self._hosts[host_id], order, stream_id))
 
         self._log.append({'time': time.monotonic() - self._begin_time, 'order': order})
-        self._host_counts[host_id]['count'] += 1
+        self._host_counts[host_id] += 1
         self._host_id_queue.put(host_id)
+        self._receive_count += 1
 
         return order, body
 
@@ -248,9 +287,10 @@ class SplitDownloader(object):
         linkable = True
         returnable = False
         b = bytearray()
-        i = self._received_index
         return_count = 0
         stack_count = 0
+
+        i = self._received_index
         while i < len(self._data):
             if self._data[i] is None:
                 linkable = False
@@ -265,10 +305,10 @@ class SplitDownloader(object):
                     stack_count += 1
             i += 1
 
+        self._stack_counts.append(stack_count)
         if returnable:
             self._received_index += return_count
             self._return_counts.append(return_count)
-            self._stack_counts.append(stack_count)
             self._logger.debug('Return blocks: length={}, return_count={}'.format(len(b), return_count))
             return b
         else:
