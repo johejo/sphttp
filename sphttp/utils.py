@@ -10,8 +10,8 @@ from .exception import StatusCodeError, NoContentLength, NoAcceptRanges, SchemeE
 REDIRECT_STATUSES = [301, 302, 303, 307, 308]
 
 
-def get_length(target_url):
-    resp = requests.head(url=target_url, verify=False)
+def get_length(target_url, *, verify=True):
+    resp = requests.head(url=target_url, verify=verify)
     status = resp.status_code
     if status == 200:
         try:
@@ -69,16 +69,15 @@ def get_order(range_header, split_size):
     return order
 
 
-def get_length_hyper(target_url):
+def get_length_hyper(target_url, *, ssl_context=None):
 
     parsed_url = urlparse(target_url)
-    context = init_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
+    if ssl_context is None:
+        ssl_context = init_context()
 
     length = None
 
-    with HTTP20Connection(parsed_url.hostname, ssl_context=context) as conn:
+    with HTTP20Connection(parsed_url.hostname, ssl_context=ssl_context) as conn:
         conn.request('HEAD', url=parsed_url.path)
         resp = conn.get_response()
         status = resp.status
@@ -104,3 +103,8 @@ def get_length_hyper(target_url):
             raise StatusCodeError(message)
 
     return target_url, length
+
+
+def init_http2_multi_stream_setting(http2_server_urls):
+    setting = {url: 1 for url in http2_server_urls}
+    return setting

@@ -28,7 +28,3 @@ class NoAcceptRanges(SphttpException):
 
 class SchemeError(SphttpException):
     pass
-
-
-class DuplicatedStartError(SphttpException):
-    pass

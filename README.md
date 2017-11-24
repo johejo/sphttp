@@ -23,11 +23,9 @@ urls = [
 ]
 
 sd = SplitDownloader(urls)
-sd.start()
 for part in sd:
-    # Do something to 'part'.
-    print(len(part))   
-sd.close()
+    # Do something with 'part'.
+    print(len(part))
 ```
 
 # Example
@@ -39,12 +37,11 @@ from sphttp import SplitDownloader
 if __name__ == '__main__':
     
     urls = [
-        'http://ftp.ne.jp/Linux/packages/ubuntu/releases-cd/17.10/ubuntu-17.10-server-amd64.iso',  # KDDI
-        'http://ubuntutym2.u-toyama.ac.jp/ubuntu/17.10/ubuntu-17.10-server-amd64.iso',  # toyama
-        'http://ftp.riken.go.jp/Linux/ubuntu-releases/17.10/ubuntu-17.10-server-amd64.iso',  # riken
-        'http://ftp.jaist.ac.jp/pub/Linux/ubuntu-releases/17.10/ubuntu-17.10-server-amd64.iso',  # jaist
-        'http://ftp.yz.yamagata-u.ac.jp/pub/linux/ubuntu/releases/17.10/ubuntu-17.10-server-amd64.iso',  # yamagata
+        'https://example0.com/1GB.txt', 
+        'https://example1.com/1GB.txt', 
+        'https://example2.com/1GB.txt', 
     ]
+
     
     filename = os.path.basename(urls[0])
     
@@ -65,16 +62,13 @@ It supports HTTP/2 multiple streams as well.
 It does not check whether the target server supports HTTP/2.  
 It is undefined what to do when multiple stream setting is done for access to a server that supports HTTP/1.1 only.
 ## How to set multiple streams for one connection
-multiple streaming
+
+Multi stream setting is done using a simple dictionary whose key is url.
+
 ```python
 
-from sphttp import SplitDownloader
+from sphttp import SplitDownloader, init_http2_multi_stream_setting
 
-setting = {
-    'https://example0.com/1GB.txt': 5, 
-    'https://example1.com/1GB.txt': 4, 
-    'https://example2.com/1GB.txt': 3, 
-}
 
 urls = [
     'https://example0.com/1GB.txt', 
@@ -82,9 +76,16 @@ urls = [
     'https://example2.com/1GB.txt', 
 ]
 
+# Initialize the number of streams per host to 1.
+setting = init_http2_multi_stream_setting(urls)
+
+# Here, the number of streams of all the hosts is set to 3.
+for key in setting.keys():
+    setting[key] = 3
+
 with SplitDownloader(urls, http2_multiple_stream_setting=setting) as sd:
     for part in sd:
-        # Do something to part.
+        # Do something with 'part'.
         print(len(part))
 
 ```

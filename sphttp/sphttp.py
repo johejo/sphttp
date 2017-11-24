@@ -12,7 +12,7 @@ from hyper.tls import init_context
 
 from .utils import get_length, map_all, get_order, get_port
 from .exception import (
-    FileSizeError, InvalidStatusCode, IncompleteError, DuplicatedStartError
+    FileSizeError, InvalidStatusCode, IncompleteError
 )
 
 local_logger = getLogger(__name__)
@@ -23,6 +23,7 @@ DEFAULT_SPLIT_SIZE = 10 ** 6
 
 class SplitDownloader(object):
     def __init__(self, urls, *,
+                 verify=False,
                  split_size=DEFAULT_SPLIT_SIZE,
                  http2_multiple_stream_setting=None,
                  logger=local_logger,
@@ -32,7 +33,7 @@ class SplitDownloader(object):
 
         length_list = []
         for i, u in enumerate(urls):
-            url, length = get_length(target_url=u)
+            url, length = get_length(target_url=u, verify=verify)
             if u != url:
                 urls[i] = url
             length_list.append(length)
@@ -54,8 +55,9 @@ class SplitDownloader(object):
         self._set_params()
 
         self._context = init_context()
-        self._context.check_hostname = False
-        self._context.verify_mode = ssl.CERT_NONE
+        if verify is False:
+            self._context.check_hostname = False
+            self._context.verify_mode = ssl.CERT_NONE
 
         self._urls = {host_id: url for host_id, url in zip(self._host_ids, urls)}
 
@@ -102,14 +104,9 @@ class SplitDownloader(object):
 
         self._logger.debug('Init')
 
-    def start(self):
-        if self._is_started is False:
-            self._begin_time = time.monotonic()
-            self._future_body = [self._executor.submit(self._get_body) for _ in range(self._request_num)]
-            self._is_started = True
-        else:
-            message = 'Duplicated start is forbidden.'
-            raise DuplicatedStartError(message)
+    def _start(self):
+        self._begin_time = time.monotonic()
+        self._future_body = [self._executor.submit(self._get_body) for _ in range(self._request_num)]
 
     def get_trace_data(self):
         if self._is_completed:
@@ -118,7 +115,7 @@ class SplitDownloader(object):
             message = 'Cannot return trace data before the download is completed'
             raise IncompleteError(message)
 
-    def close(self):
+    def _close(self):
         self._executor.shutdown()
 
     def _set_connections(self):
@@ -240,7 +237,12 @@ class SplitDownloader(object):
             self._end_time = time.monotonic()
             self._total_thp = (self._length * 8) / (self._end_time - self._begin_time) / 10 ** 6
             self._is_completed = True
+            self._close()
             raise StopIteration
+
+        if self._is_started is False:
+            self._start()
+            self._is_started = True
 
         self._get_result()
         linkable = True
@@ -277,9 +279,7 @@ class SplitDownloader(object):
         return self
 
     def __enter__(self):
-        self.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
         return
