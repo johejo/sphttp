@@ -2,6 +2,7 @@ import time
 import ssl
 import gc
 import random
+import math
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from urllib.parse import urlparse
@@ -28,6 +29,7 @@ class SplitDownloader(object):
                  split_size=DEFAULT_SPLIT_SIZE,
                  http2_multiple_stream_setting=None,
                  delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
+                 amplification=None,
                  logger=local_logger,
                  ):
 
@@ -90,8 +92,12 @@ class SplitDownloader(object):
         self._delay_request_algorithm = delay_request_algorithm
         if self._delay_request_algorithm is DelayRequestAlgorithm.ESTIMATE_DIFFERENCES:
             self._previous_counts = {host_id: 0 for host_id in self._host_ids}
-        else:
-            self._previous_counts = None
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.LINEAR_TO_HOST_USAGE_COUNT:
+            if amplification is None:
+                # self._amplification = math.sqrt(self._request_num)
+                self._amplification = self._request_num / 10
+            else:
+                self._amplification = amplification
 
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._future_body = None
@@ -103,6 +109,7 @@ class SplitDownloader(object):
         self._host_counts = {host_id: 0 for host_id in self._host_ids}
         self._return_counts = []
         self._stack_counts = []
+        self._previous_stack_count = 0
         self._total_thp = 0
         self._begin_time = None
         self._end_time = None
@@ -176,18 +183,33 @@ class SplitDownloader(object):
         if self._delay_request_algorithm is DelayRequestAlgorithm.NORMAL:
             return 0
         elif self._delay_request_algorithm is DelayRequestAlgorithm.ESTIMATE_DIFFERENCES:
-            return self._calc_estimate_differences(host_id)
+            return self._estimate_differences(host_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.LINEAR_TO_HOST_USAGE_COUNT:
-            return
+            return self._linear_to_host_usage_count(host_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_DOWNWARD_TO_HOST_USAGE_COUNT:
-            return
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_UPWARD_TO_HOST_USAGE_COUNT:
             return
         else:
             message = '{} is an unsupported algorithm.'.format(self._delay_request_algorithm.name)
             raise DelayRequestAlgorithmError(message)
 
-    def _calc_estimate_differences(self, host_id):
+    def _linear_to_host_usage_count(self, host_id):
+        ratio = self._get_host_count_ratio(host_id)
+        degree = int(self._amplification * (1 - ratio))
+        self._logger.debug('Linear: host={}, ratio={}, degree={}'.format(self._hosts[host_id], ratio, degree))
+        return degree
+
+    def _get_host_count_ratio(self, host_id):
+        host_usage_count = self._host_counts[host_id]
+        max_host_count = max(self._host_counts.values())
+        try:
+            ratio = host_usage_count / max_host_count
+        except ZeroDivisionError:
+            ratio = 1
+        self._logger.debug('Ratio: host={}, host_usage_count={}, max_host_count={}, ratio={}'
+                           .format(self._hosts[host_id], host_usage_count, max_host_count, ratio))
+        return ratio
+
+    def _estimate_differences(self, host_id):
         current_count = self._receive_count
         previous_count = self._previous_counts[host_id]
         diff = current_count - previous_count
@@ -238,13 +260,8 @@ class SplitDownloader(object):
             body = resp.read()
 
         except ConnectionResetError:
-            host, port = self._hosts[host_id]
-            self._logger.debug('ConnectionRestError: host_id={}, host={}:{}'.format(host_id, host, port))
-            conn = HTTPConnection(host + ':' + str(port), ssl_context=self._context)
-            self._conns[host_id] = conn
-            self._host_counts[host_id] = 0
-            self._host_id_queue.put(host_id)
             self._params.insert(0, param)
+            self._reset_connection(host_id)
             return self._get_body()
 
         self._logger.debug('Receive response: host_id={}, host={}, order={}, stream_id={}'
@@ -256,6 +273,14 @@ class SplitDownloader(object):
         self._receive_count += 1
 
         return order, body
+
+    def _reset_connection(self, host_id):
+        host, port = self._hosts[host_id]
+        self._logger.debug('ConnectionRestError: host_id={}, host={}:{}'.format(host_id, host, port))
+        conn = HTTPConnection(host + ':' + str(port), ssl_context=self._context)
+        self._conns[host_id] = conn
+        self._host_counts[host_id] = 0
+        self._host_id_queue.put(host_id)
 
     def _get_result(self):
         i = 0
@@ -305,7 +330,11 @@ class SplitDownloader(object):
                     stack_count += 1
             i += 1
 
-        self._stack_counts.append(stack_count)
+        if stack_count != self._previous_stack_count:
+            self._stack_counts.append(stack_count)
+
+        self._previous_stack_count = stack_count
+
         if returnable:
             self._received_index += return_count
             self._return_counts.append(return_count)
