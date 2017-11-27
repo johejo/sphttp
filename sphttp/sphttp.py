@@ -2,8 +2,8 @@ import time
 import ssl
 import gc
 import random
-import math
 from queue import Queue
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from urllib.parse import urlparse
 from logging import getLogger, NullHandler
@@ -29,7 +29,6 @@ class SplitDownloader(object):
                  split_size=DEFAULT_SPLIT_SIZE,
                  http2_multiple_stream_setting=None,
                  delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
-                 amplification=None,
                  logger=local_logger,
                  ):
 
@@ -46,14 +45,14 @@ class SplitDownloader(object):
             message = 'File size differs for each host.'
             raise FileSizeError(message)
 
-        self._length = length_list[0]
+        self.length = length_list[0]
 
         self._host_ids = [i for i in range(len(urls))]
         self._hosts = {host_id: (urlparse(url).hostname, get_port(url)) for host_id, url in zip(self._host_ids, urls)}
         self._host_http2_flags = {host_id: False for host_id in self._host_ids}
 
         self._split_size = split_size
-        self._request_num = self._length // self._split_size
+        self._request_num = self.length // self._split_size
 
         self._params = []
         self._set_params()
@@ -91,13 +90,7 @@ class SplitDownloader(object):
 
         self._delay_request_algorithm = delay_request_algorithm
         if self._delay_request_algorithm is DelayRequestAlgorithm.ESTIMATE_DIFFERENCES:
-            self._previous_counts = {host_id: 0 for host_id in self._host_ids}
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.LINEAR_TO_HOST_USAGE_COUNT:
-            if amplification is None:
-                # self._amplification = math.sqrt(self._request_num)
-                self._amplification = self._request_num / 10
-            else:
-                self._amplification = amplification
+            self._previous_counts = Counter()
 
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._future_body = None
@@ -166,7 +159,7 @@ class SplitDownloader(object):
 
     def _set_params(self):
 
-        reminder = self._length % self._split_size
+        reminder = self.length % self._split_size
         if reminder != 0:
             self._request_num += 1
 
@@ -184,29 +177,37 @@ class SplitDownloader(object):
             return 0
         elif self._delay_request_algorithm is DelayRequestAlgorithm.ESTIMATE_DIFFERENCES:
             return self._estimate_differences(host_id)
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.LINEAR_TO_HOST_USAGE_COUNT:
-            return self._linear_to_host_usage_count(host_id)
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_DOWNWARD_TO_HOST_USAGE_COUNT:
-            return
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE_PROPORTION:
+            return self._inverse_proportion_to_host_usage_count(host_id)
         else:
             message = '{} is an unsupported algorithm.'.format(self._delay_request_algorithm.name)
             raise DelayRequestAlgorithmError(message)
 
-    def _linear_to_host_usage_count(self, host_id):
+    def _inverse_proportion_to_host_usage_count(self, host_id):
         ratio = self._get_host_count_ratio(host_id)
-        degree = int(self._amplification * (1 - ratio))
-        self._logger.debug('Linear: host={}, ratio={}, degree={}'.format(self._hosts[host_id], ratio, degree))
+        try:
+            degree = int((1 / ratio) - 1)
+        except ZeroDivisionError:
+            degree = self._request_num
+
+        self._logger.debug('Inverse: host={}, ratio={}, degree={}'.format(self._hosts[host_id], ratio, degree))
         return degree
 
     def _get_host_count_ratio(self, host_id):
         host_usage_count = self._host_counts[host_id]
         max_host_count = max(self._host_counts.values())
-        try:
-            ratio = host_usage_count / max_host_count
-        except ZeroDivisionError:
+        sum_host_count = sum(self._host_counts.values())
+
+        if host_usage_count == max_host_count:
             ratio = 1
-        self._logger.debug('Ratio: host={}, host_usage_count={}, max_host_count={}, ratio={}'
-                           .format(self._hosts[host_id], host_usage_count, max_host_count, ratio))
+        else:
+            try:
+                ratio = host_usage_count / sum_host_count
+            except ZeroDivisionError:
+                ratio = 1
+
+        self._logger.debug('Ratio: host={}, host_usage_count={}, max_host_count={}, sum_host_count={}, ratio={}'
+                           .format(self._hosts[host_id], host_usage_count, max_host_count, sum_host_count, ratio))
         return ratio
 
     def _estimate_differences(self, host_id):
@@ -267,8 +268,9 @@ class SplitDownloader(object):
         self._logger.debug('Receive response: host_id={}, host={}, order={}, stream_id={}'
                            .format(host_id, self._hosts[host_id], order, stream_id))
 
-        self._log.append({'time': time.monotonic() - self._begin_time, 'order': order})
         self._host_counts[host_id] += 1
+        self._log.append({'time': time.monotonic() - self._begin_time, 'order': order})
+
         self._host_id_queue.put(host_id)
         self._receive_count += 1
 
@@ -299,7 +301,7 @@ class SplitDownloader(object):
     def __next__(self):
         if self._received_index == self._request_num:
             self._end_time = time.monotonic()
-            self._total_thp = (self._length * 8) / (self._end_time - self._begin_time) / 10 ** 6
+            self._total_thp = (self.length * 8) / (self._end_time - self._begin_time) / 10 ** 6
             self._is_completed = True
             self._close()
             raise StopIteration
@@ -330,14 +332,15 @@ class SplitDownloader(object):
                     stack_count += 1
             i += 1
 
-        if stack_count != self._previous_stack_count:
+        if stack_count != self._previous_stack_count and time.monotonic() - self._begin_time > 10:
             self._stack_counts.append(stack_count)
 
         self._previous_stack_count = stack_count
 
         if returnable:
             self._received_index += return_count
-            self._return_counts.append(return_count)
+            if time.monotonic() - self._begin_time > 10:
+                self._return_counts.append(return_count)
             self._logger.debug('Return blocks: length={}, return_count={}'.format(len(b), return_count))
             return b
         else:
