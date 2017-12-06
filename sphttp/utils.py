@@ -3,10 +3,20 @@ from urllib.parse import urlparse
 import requests
 from hyper import HTTP20Connection
 from hyper.tls import init_context
+from hyper.http20.window import BaseFlowControlManager
 
 from .exception import StatusCodeError, NoContentLength, NoAcceptRanges, SchemeError
 
 REDIRECT_STATUSES = [301, 302, 303, 307, 308]
+
+
+class SphttpFlowControlManager(BaseFlowControlManager):
+
+    def increase_window_size(self, frame_size):
+        return frame_size * 2
+
+    def blocked(self):
+        return self.initial_window_size - self.window_size
 
 
 def get_length(target_url, *, verify=True):

@@ -11,7 +11,7 @@ from logging import getLogger, NullHandler
 from hyper import HTTPConnection, HTTP20Connection, HTTP20Response
 from hyper.tls import init_context
 
-from .utils import get_length, map_all, get_order, get_port
+from .utils import get_length, map_all, get_order, get_port, SphttpFlowControlManager
 from .algorithm import DelayRequestAlgorithm
 from .exception import (
     FileSizeError, InvalidStatusCode, IncompleteError, DelayRequestAlgorithmError
@@ -25,7 +25,7 @@ DEFAULT_SPLIT_SIZE = 10 ** 6
 
 class SplitDownloader(object):
     def __init__(self, urls, *,
-                 verify=False,
+                 verify=True,
                  split_size=DEFAULT_SPLIT_SIZE,
                  http2_multiple_stream_setting=None,
                  delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
@@ -100,12 +100,6 @@ class SplitDownloader(object):
         self._receive_count = 0
 
         self._host_counts = {host_id: 0 for host_id in self._host_ids}
-        self._return_counts = []
-        self._stack_counts = []
-        self._previous_stack_count = 0
-        self._total_thp = 0
-        self._begin_time = None
-        self._end_time = None
         self._log = []
 
         self._is_completed = False
@@ -115,7 +109,7 @@ class SplitDownloader(object):
 
     def get_trace_data(self):
         if self._is_completed:
-            return self._hosts, self._total_thp, self._return_counts, self._stack_counts, self._host_counts, self._log
+            return self._hosts, self._host_counts, self._log
         else:
             message = 'Cannot return trace data before the download is completed'
             raise IncompleteError(message)
@@ -135,11 +129,17 @@ class SplitDownloader(object):
                 target_host = parsed_url.hostname
                 target_port = get_port(url)
                 if (host, port) == (target_host, target_port):
-                    self._conns[host_id] = HTTP20Connection(host + ':' + str(port), ssl_context=self._context)
+                    self._conns[host_id] = HTTP20Connection(host + ':' + str(port),
+                                                            ssl_context=self._context,
+                                                            window_manager=SphttpFlowControlManager
+                                                            )
                     match = True
                     break
             if match is False:
-                self._conns[host_id] = HTTPConnection(host + ':' + str(port), ssl_context=self._context)
+                self._conns[host_id] = HTTPConnection(host + ':' + str(port),
+                                                      ssl_context=self._context,
+                                                      window_manager=SphttpFlowControlManager
+                                                      )
 
     def _set_multi_stream(self):
         s = 0
@@ -213,13 +213,13 @@ class SplitDownloader(object):
     def _estimate_differences(self, host_id):
         current_count = self._receive_count
         previous_count = self._previous_counts[host_id]
-        diff = current_count - previous_count
+        diff = current_count - previous_count - (len(self._urls) - 1)
         self._previous_counts[host_id] = current_count
 
         self._logger.debug('Diff: host={}, current_count={}, previous_count={}, diff={}'
                            .format(self._hosts[host_id], current_count, previous_count, diff))
 
-        if diff > len(self._urls):
+        if diff > 0:
             return diff
         else:
             return 0
@@ -279,7 +279,9 @@ class SplitDownloader(object):
     def _reset_connection(self, host_id):
         host, port = self._hosts[host_id]
         self._logger.debug('ConnectionRestError: host_id={}, host={}:{}'.format(host_id, host, port))
-        conn = HTTPConnection(host + ':' + str(port), ssl_context=self._context)
+        conn = HTTPConnection(host + ':' + str(port), ssl_context=self._context,
+                              window_manager=SphttpFlowControlManager
+                              )
         self._conns[host_id] = conn
         self._host_counts[host_id] = 0
         self._host_id_queue.put(host_id)
@@ -299,9 +301,7 @@ class SplitDownloader(object):
                     i += 1
 
     def __next__(self):
-        if self._received_index == self._request_num:
-            self._end_time = time.monotonic()
-            self._total_thp = (self.length * 8) / (self._end_time - self._begin_time) / 10 ** 6
+        if self._received_index >= self._request_num:
             self._is_completed = True
             self._close()
             raise StopIteration
@@ -311,36 +311,25 @@ class SplitDownloader(object):
             self._is_started = True
 
         self._get_result()
-        linkable = True
         returnable = False
         b = bytearray()
-        return_count = 0
-        stack_count = 0
 
         i = self._received_index
         while i < len(self._data):
             if self._data[i] is None:
-                linkable = False
+                break
             else:
-                if linkable:
-                    return_count += 1
-                    b += self._data[i]
-                    self._data[i] = None
-                    gc.collect()
-                    returnable = True
-                else:
-                    stack_count += 1
+                b += self._data[i]
+                self._data[i] = b''
+                gc.collect()
+                returnable = True
             i += 1
 
-        if stack_count != self._previous_stack_count and time.monotonic() - self._begin_time > 10:
-            self._stack_counts.append(stack_count)
-
-        self._previous_stack_count = stack_count
-
         if returnable:
+            return_count = len(b) // self._split_size
+            if return_count < 1:
+                return_count = 1
             self._received_index += return_count
-            if time.monotonic() - self._begin_time > 10:
-                self._return_counts.append(return_count)
             self._logger.debug('Return blocks: length={}, return_count={}'.format(len(b), return_count))
             return b
         else:
