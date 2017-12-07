@@ -25,17 +25,9 @@ def analyze_log(time_list, order_list):
         else:
             rn = 0
             stock.append(o)
-        if 10 < t < end - 10:
+        if 20 < t:
             stock_count.append(len(stock))
             return_count.append(rn)
+    rcmean, rcstdev, scmean, scstdev = mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
 
-    return mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
-
-
-if __name__ == '__main__':
-
-    order = [8, 9, 0, 1, 3, 4, 5, 2, 6, 7, 12, 10, 11]
-
-    rcmean, rcstdev, scmean, scstdev = analyze_log(order)
-
-    print(rcmean, rcstdev, scmean, scstdev)
+    return rcmean, rcstdev, scmean, scstdev

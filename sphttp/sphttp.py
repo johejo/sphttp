@@ -1,6 +1,7 @@
 import time
 import ssl
 import gc
+import math
 import random
 from queue import Queue
 from collections import Counter
@@ -105,6 +106,9 @@ class SplitDownloader(object):
         self._is_completed = False
         self._is_started = False
 
+        self._ratio = []
+        self._degree = []
+
         self._logger.debug('Init')
 
     def get_trace_data(self):
@@ -113,6 +117,9 @@ class SplitDownloader(object):
         else:
             message = 'Cannot return trace data before the download is completed'
             raise IncompleteError(message)
+
+    def get_degree_data(self):
+        return self._ratio, self._degree
 
     def _start(self):
         self._begin_time = time.monotonic()
@@ -179,9 +186,43 @@ class SplitDownloader(object):
             return self._estimate_differences(host_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE_PROPORTION:
             return self._inverse_proportion_to_host_usage_count(host_id)
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_DOWNWARD:
+            return self._convex_downward_to_host_usage_count(host_id)
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.LOGARITHM:
+            return self._logarithm_func(host_id)
         else:
             message = '{} is an unsupported algorithm.'.format(self._delay_request_algorithm.name)
             raise DelayRequestAlgorithmError(message)
+
+    def _convex_downward_to_host_usage_count(self, host_id):
+        ratio = self._get_host_count_ratio(host_id)
+
+        degree = int(100 * (1 - ratio) ** 15)
+
+        self._logger.debug('Inverse: host={}, ratio={}, degree={}'.format(self._hosts[host_id], ratio, degree))
+
+        self._ratio.append(ratio)
+        self._degree.append(degree)
+
+        if degree > 0:
+            return degree
+        else:
+            return 0
+
+    def _logarithm_func(self, host_id):
+        ratio = self._get_host_count_ratio(host_id)
+
+        degree = int(-40 * math.log(2.5 * ratio, 10))
+
+        self._logger.debug('logarithm: host={}, ratio={}, degree={}'.format(self._hosts[host_id], ratio, degree))
+
+        self._ratio.append(ratio)
+        self._degree.append(degree)
+
+        if degree > 0:
+            return degree
+        else:
+            return 0
 
     def _inverse_proportion_to_host_usage_count(self, host_id):
         ratio = self._get_host_count_ratio(host_id)
@@ -191,12 +232,19 @@ class SplitDownloader(object):
             degree = self._request_num
 
         self._logger.debug('Inverse: host={}, ratio={}, degree={}'.format(self._hosts[host_id], ratio, degree))
-        return degree
+
+        self._ratio.append(ratio)
+        self._degree.append(degree)
+
+        if degree > 0:
+            return degree
+        else:
+            return 0
 
     def _get_host_count_ratio(self, host_id):
         host_usage_count = self._host_counts[host_id]
         max_host_count = max(self._host_counts.values())
-        sum_host_count = sum(self._host_counts.values())
+        sum_host_count = sum(self._host_counts.values()) - host_usage_count
 
         if host_usage_count == max_host_count:
             ratio = 1
@@ -219,18 +267,24 @@ class SplitDownloader(object):
         self._logger.debug('Diff: host={}, current_count={}, previous_count={}, diff={}'
                            .format(self._hosts[host_id], current_count, previous_count, diff))
 
-        if diff > 0:
-            return diff
-        else:
-            return 0
+        if diff < 0:
+            diff = 0
+        ratio = self._get_host_count_ratio(host_id)
+        self._ratio.append(ratio)
+        self._degree.append(diff)
+
+        return diff
 
     def _get_body(self):
         host_id = self._host_id_queue.get()
         conn = self._conns[host_id]  # type: HTTPConnection
         parsed_url = urlparse(self._urls[host_id])
 
-        skip = self._get_delay_request_degree(host_id)
+        x = self._get_delay_request_degree(host_id)
+        skip = x
         while True:
+            if skip < x * 0.8:
+                return self._get_body()
             try:
                 param = self._params.pop(skip)
                 break
@@ -263,6 +317,7 @@ class SplitDownloader(object):
         except ConnectionResetError:
             self._params.insert(0, param)
             self._reset_connection(host_id)
+            self._host_id_queue.put(host_id)
             return self._get_body()
 
         self._logger.debug('Receive response: host_id={}, host={}, order={}, stream_id={}'
@@ -283,8 +338,6 @@ class SplitDownloader(object):
                               window_manager=SphttpFlowControlManager
                               )
         self._conns[host_id] = conn
-        self._host_counts[host_id] = 0
-        self._host_id_queue.put(host_id)
 
     def _get_result(self):
         i = 0
@@ -304,6 +357,7 @@ class SplitDownloader(object):
         if self._received_index >= self._request_num:
             self._is_completed = True
             self._close()
+            self._logger.debug('Finish')
             raise StopIteration
 
         if self._is_started is False:
