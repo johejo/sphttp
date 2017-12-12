@@ -8,10 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from urllib.parse import urlparse
 from logging import getLogger, NullHandler
 
-from hyper import HTTPConnection, HTTP20Connection, HTTP20Response
-from hyper.tls import init_context, ssl
+import requests
 
-from .utils import get_length, map_all, get_order, get_port, SphttpFlowControlManager
+from .utils import get_length, map_all, get_order, get_port
 from .algorithm import DelayRequestAlgorithm
 from .exception import (
     FileSizeError, InvalidStatusCode, IncompleteError, DelayRequestAlgorithmError
@@ -23,11 +22,10 @@ local_logger.addHandler(NullHandler())
 DEFAULT_SPLIT_SIZE = 10 ** 6
 
 
-class SplitDownloader(object):
+class SplitHTTP11Downloader(object):
     def __init__(self, urls, *,
                  verify=True,
                  split_size=DEFAULT_SPLIT_SIZE,
-                 http2_multiple_stream_setting=None,
                  delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
                  logger=local_logger,
                  ):
@@ -57,34 +55,18 @@ class SplitDownloader(object):
         self._params = []
         self._set_params()
 
-        self._context = init_context()
-        if verify is False:
-            self._context.check_hostname = False
-            self._context.verify_mode = ssl.CERT_NONE
-
         self._urls = {host_id: url for host_id, url in zip(self._host_ids, urls)}
 
-        self._parallel_setting = http2_multiple_stream_setting  # type: dict
-        if self._parallel_setting is None:
-            self._parallel_setting = {}
-
         self._sessions = {}
-        self._set_connections()
-
-        for url in urls:
-            if url not in self._parallel_setting.keys():
-                self._parallel_setting[url] = 1
+        for host_id in self._hosts.keys():
+            sess = requests.Session()
+            self._sessions[host_id] = sess
 
         self._host_id_queue = Queue()
         for host_id in self._host_ids:
             self._host_id_queue.put(host_id)
 
-        if http2_multiple_stream_setting:
-            self._max_workers = None
-            self._set_multi_stream()
-
-        else:
-            self._max_workers = len(self._hosts)
+        self._max_workers = len(self._hosts)
 
         random.shuffle(self._host_id_queue.queue)
 
@@ -132,42 +114,6 @@ class SplitDownloader(object):
 
     def _close(self):
         self._executor.shutdown()
-
-    def _set_connections(self):
-        for host_id, (host, port) in self._hosts.items():
-            match = False
-            for url, parallel_num in self._parallel_setting.items():
-                parsed_url = urlparse(url)
-                target_host = parsed_url.hostname
-                target_port = get_port(url)
-                if (host, port) == (target_host, target_port):
-                    self._sessions[host_id] = HTTP20Connection(host + ':' + str(port),
-                                                               ssl_context=self._context,
-                                                               window_manager=SphttpFlowControlManager
-                                                               )
-                    match = True
-                    break
-            if match is False:
-                self._sessions[host_id] = HTTPConnection(host + ':' + str(port),
-                                                         ssl_context=self._context,
-                                                         window_manager=SphttpFlowControlManager
-                                                         )
-
-    def _set_multi_stream(self):
-        s = 0
-        for url, parallel_num in self._parallel_setting.items():
-            s += parallel_num
-            parsed_url = urlparse(url)
-            target_port = get_port(url)
-            target_host = parsed_url.hostname
-            target_host_id = None
-            for host_id, (host, port) in self._hosts.items():
-                if (host, port) == (target_host, target_port):
-                    target_host_id = host_id
-
-            for _ in range(parallel_num - 1):
-                self._host_id_queue.put(target_host_id)
-        self._max_workers = s
 
     def _set_params(self):
 
@@ -266,24 +212,14 @@ class SplitDownloader(object):
     def _get_host_count_ratio(self, host_id):
         host_usage_count = self._host_counts[host_id]
         max_host_count = max(self._host_counts.values())
-        # sum_host_count = sum(self._host_counts.values()) - host_usage_count
-
-        # if host_usage_count == max_host_count:
-        #     ratio = 1
-        # else:
-        #     try:
-        #         ratio = host_usage_count / sum_host_count
-        #     except ZeroDivisionError:
-        #         ratio = 1
 
         try:
             ratio = host_usage_count / max_host_count
         except ZeroDivisionError:
             ratio = 1
-        sum_host_count = None
 
-        self._logger.debug('Ratio: host={}, host_usage_count={}, max_host_count={}, sum_host_count={}, ratio={}'
-                           .format(self._hosts[host_id], host_usage_count, max_host_count, sum_host_count, ratio))
+        self._logger.debug('Ratio: host={}, host_usage_count={}, max_host_count={}, ratio={}'
+                           .format(self._hosts[host_id], host_usage_count, max_host_count, ratio))
         return ratio
 
     def _estimate_differences(self, host_id):
@@ -306,8 +242,8 @@ class SplitDownloader(object):
 
     def _get_body(self):
         host_id = self._host_id_queue.get()
-        conn = self._sessions[host_id]  # type: HTTPConnection
-        parsed_url = urlparse(self._urls[host_id])
+        conn = self._sessions[host_id]
+        url = self._urls[host_id]
 
         x = self._get_delay_request_degree(host_id)
         skip = x
@@ -324,36 +260,27 @@ class SplitDownloader(object):
         self._send_time.append(time.monotonic() - self._begin_time)
 
         try:
-            if self._host_http2_flags[host_id]:
-                stream_id = conn.request('GET', parsed_url.path, headers=param['headers'])
-                resp = conn.get_response(stream_id)
-            else:
-                stream_id = None
-                conn.request('GET', parsed_url.path, headers=param['headers'])
-                resp = conn.get_response()
+            resp = conn.request('GET', url, headers=param['headers'])
 
-            self._logger.debug('Send request: host_id={}, host={}, index={}, stream_id={}, skip={}'
-                               .format(host_id, self._hosts[host_id], param['index'], stream_id, skip))
+            self._logger.debug('Send request: host_id={}, host={}, index={}, skip={}'
+                               .format(host_id, self._hosts[host_id], param['index'], skip))
 
-            if resp.status != 206:
+            if resp.status_code != 206:
                 message = 'status_code: {}, host: {}'.format(resp.status, self._hosts[host_id])
                 raise InvalidStatusCode(message)
 
-            if self._host_http2_flags[host_id] is False and type(resp) is HTTP20Response:
-                self._host_http2_flags[host_id] = True
-
-            range_header = resp.headers['Content-Range'][0].decode()
+            range_header = resp.headers['Content-Range']
             order = get_order(range_header, self._split_size)
-            body = resp.read()
+            body = resp.content
 
-        except ConnectionResetError:
+        except requests.exceptions.ConnectionError:
             self._params.insert(0, param)
             self._reset_connection(host_id)
             self._host_id_queue.put(host_id)
             return self._get_body()
 
-        self._logger.debug('Receive response: host_id={}, host={}, order={}, stream_id={}'
-                           .format(host_id, self._hosts[host_id], order, stream_id))
+        self._logger.debug('Receive response: host_id={}, host={}, order={}'
+                           .format(host_id, self._hosts[host_id], order))
 
         self._host_counts[host_id] += 1
         self._log.append({'time': time.monotonic() - self._begin_time, 'order': order})
@@ -366,9 +293,7 @@ class SplitDownloader(object):
     def _reset_connection(self, host_id):
         host, port = self._hosts[host_id]
         self._logger.debug('ConnectionRestError: host_id={}, host={}:{}'.format(host_id, host, port))
-        conn = HTTPConnection(host + ':' + str(port), ssl_context=self._context,
-                              window_manager=SphttpFlowControlManager
-                              )
+        conn = requests.Session()
         self._sessions[host_id] = conn
 
     def _get_result(self):
