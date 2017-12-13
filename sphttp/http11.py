@@ -93,6 +93,8 @@ class SplitHTTP11Downloader(object):
         self._index = []
         self._send_time = []
 
+        self._begin_time = None
+
         self._logger.debug('Init')
 
     def get_trace_data(self):
@@ -108,9 +110,10 @@ class SplitHTTP11Downloader(object):
     def get_send_time(self):
         return self._index, self._send_time
 
-    def _start(self):
+    def start(self):
         self._begin_time = time.monotonic()
         self._future_body = [self._executor.submit(self._get_body) for _ in range(self._request_num)]
+        self._is_started = True
 
     def _close(self):
         self._executor.shutdown()
@@ -225,7 +228,7 @@ class SplitHTTP11Downloader(object):
     def _estimate_differences(self, host_id):
         current_count = self._receive_count
         previous_count = self._previous_counts[host_id]
-        diff = current_count - previous_count - (len(self._urls) - 1)
+        diff = current_count - previous_count - (len(self._urls))
         self._previous_counts[host_id] = current_count
 
         self._logger.debug('Diff: host={}, current_count={}, previous_count={}, diff={}'
@@ -318,8 +321,7 @@ class SplitHTTP11Downloader(object):
             raise StopIteration
 
         if self._is_started is False:
-            self._start()
-            self._is_started = True
+            self.start()
 
         self._get_result()
         returnable = False
@@ -344,7 +346,7 @@ class SplitHTTP11Downloader(object):
             self._logger.debug('Return blocks: length={}, return_count={}'.format(len(b), return_count))
             return b
         else:
-            time.sleep(0.01)
+            time.sleep(0.1)
             return self.__next__()
 
     def __iter__(self):
