@@ -1,4 +1,5 @@
 from urllib.parse import urlparse
+from collections import deque
 
 import requests
 from hyper import HTTP20Connection
@@ -57,7 +58,7 @@ def get_port(url):
     return port
 
 
-def map_all(es):
+def match_all(es):
     """
     :param es: list
     :return: bool
@@ -65,7 +66,7 @@ def map_all(es):
     return all([e == es[0] for e in es[1:]]) if es else False
 
 
-def get_order(range_header, split_size):
+def get_index(range_header, split_size):
     """
     :param range_header: str
     :param split_size: int
@@ -74,12 +75,11 @@ def get_order(range_header, split_size):
     tmp = range_header.split(' ')
     tmp = tmp[1].split('/')
     tmp = tmp[0].split('-')
-    order = int(tmp[0]) // split_size
-    return order
+    index = int(tmp[0]) // split_size
+    return index
 
 
 def get_length_hyper(target_url, *, ssl_context=None):
-
     parsed_url = urlparse(target_url)
     if ssl_context is None:
         ssl_context = init_context()
@@ -117,3 +117,16 @@ def get_length_hyper(target_url, *, ssl_context=None):
 def init_http2_multi_stream_setting(http2_server_urls):
     setting = {url: 1 for url in http2_server_urls}
     return setting
+
+
+class CustomDeque(deque):
+    def __init__(self):
+        super().__init__()
+
+    def custom_pop(self, pos):
+        try:
+            value = self[pos]
+        except ValueError:
+            raise
+        del self[pos]
+        return value

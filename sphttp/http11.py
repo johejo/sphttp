@@ -10,7 +10,7 @@ from logging import getLogger, NullHandler
 
 import requests
 
-from .utils import get_length, map_all, get_order, get_port
+from .utils import get_length, match_all, get_index, get_port
 from .algorithm import DelayRequestAlgorithm
 from .exception import (
     FileSizeError, InvalidStatusCode, IncompleteError, DelayRequestAlgorithmError
@@ -39,7 +39,7 @@ class SplitHTTP11Downloader(object):
                 urls[i] = url
             length_list.append(length)
 
-        if map_all(length_list) is False:
+        if match_all(length_list) is False:
             message = 'File size differs for each host.'
             raise FileSizeError(message)
 
@@ -273,7 +273,7 @@ class SplitHTTP11Downloader(object):
                 raise InvalidStatusCode(message)
 
             range_header = resp.headers['Content-Range']
-            order = get_order(range_header, self._split_size)
+            order = get_index(range_header, self._split_size)
             body = resp.content
 
         except requests.exceptions.ConnectionError:

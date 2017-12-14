@@ -11,7 +11,7 @@ from logging import getLogger, NullHandler
 from hyper import HTTPConnection, HTTP20Connection, HTTP20Response
 from hyper.tls import init_context, ssl
 
-from .utils import get_length, map_all, get_order, get_port, SphttpFlowControlManager
+from .utils import get_length, match_all, get_index, get_port, SphttpFlowControlManager
 from .algorithm import DelayRequestAlgorithm
 from .exception import (
     FileSizeError, InvalidStatusCode, IncompleteError, DelayRequestAlgorithmError
@@ -41,7 +41,7 @@ class SplitDownloader(object):
                 urls[i] = url
             length_list.append(length)
 
-        if map_all(length_list) is False:
+        if match_all(length_list) is False:
             message = 'File size differs for each host.'
             raise FileSizeError(message)
 
@@ -343,7 +343,7 @@ class SplitDownloader(object):
                 self._host_http2_flags[host_id] = True
 
             range_header = resp.headers['Content-Range'][0].decode()
-            order = get_order(range_header, self._split_size)
+            order = get_index(range_header, self._split_size)
             body = resp.read()
 
         except ConnectionResetError:
