@@ -5,19 +5,17 @@ def analyze_log(trace_log):
 
     time = []
     block_nums = []
-    end = max(time)
 
     for log in trace_log:
         t, bn = log
-
-        if end * 0.1 < t < end * 0.9:
-            time.append(t)
-            block_nums.append(bn)
+        time.append(t)
+        block_nums.append(bn)
     
     stock = []
     stock_count = []
     return_count = []
     n = 0
+    end = max(time)
 
     for t, o in zip(time, block_nums):
         if n == o:
