@@ -1,13 +1,25 @@
 from statistics import mean, stdev
 
 
-def analyze_log(time_list, order_list):
+def analyze_log(trace_log):
+
+    time = []
+    block_nums = []
+    end = max(time)
+
+    for log in trace_log:
+        t, bn = log
+
+        if end * 0.1 < t < end * 0.9:
+            time.append(t)
+            block_nums.append(bn)
+    
     stock = []
     stock_count = []
     return_count = []
-    end = max(time_list)
     n = 0
-    for t, o in zip(time_list, order_list):
+
+    for t, o in zip(time, block_nums):
         if n == o:
             rn = 1
             n += 1
@@ -25,9 +37,10 @@ def analyze_log(time_list, order_list):
         else:
             rn = 0
             stock.append(o)
-        if 20 < t:
+        if end * 0.25 < t < end * 0.75:
             stock_count.append(len(stock))
             return_count.append(rn)
+
     rcmean, rcstdev, scmean, scstdev = mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
 
     return rcmean, rcstdev, scmean, scstdev

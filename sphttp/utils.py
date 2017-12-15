@@ -124,9 +124,6 @@ class CustomDeque(deque):
         super().__init__()
 
     def custom_pop(self, pos):
-        try:
-            value = self[pos]
-        except ValueError:
-            raise
+        value = self[pos]
         del self[pos]
         return value
