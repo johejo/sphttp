@@ -25,7 +25,7 @@ class MultiHTTPDownloader(object):
                  sleep_sec=DEFAULT_SLEEP_SEC,
                  enable_trace_log=False,
                  verify=True,
-                 delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
+                 delay_request_algorithm=DelayRequestAlgorithm.DIFFERENCES,
                  multi_stream_setting=None,
                  logger=local_logger, ):
 
@@ -94,7 +94,8 @@ class MultiHTTPDownloader(object):
         self._enable_trace_log = enable_trace_log
         self._begin_time = None
         if self._enable_trace_log:
-            self._trace_log = []
+            self._receive_log = []
+            self._send_log = []
 
         self._logger.debug('Init')
 
@@ -120,7 +121,7 @@ class MultiHTTPDownloader(object):
 
     def get_trace_log(self):
         if self._enable_trace_log:
-            return self._trace_log
+            return self._send_log, self._receive_log
 
     def _get_block_number(self, range_header):
         tmp = range_header.split(' ')
@@ -139,12 +140,11 @@ class MultiHTTPDownloader(object):
             return self._calc_inverse(url_id)
 
     def _measure_diff(self, url_id):
-        n = self._multi_stream_setting[url_id]
         previous = self._previous_read_count[url_id]
         current = self._receive_count
         self._previous_read_count[url_id] = current
 
-        diff = current - previous - n - (self._num_of_host - 1)
+        diff = current - previous - (self._num_of_host - 1)
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         if diff < 0:
@@ -182,9 +182,13 @@ class MultiHTTPDownloader(object):
         param = self._get_param(url_id)
         thread_name = threading.currentThread().getName()
 
+        stream_id = sess.request('GET', url.path, headers=param['headers'])
         self._logger.debug('Send request: thread_name={}, block_num={}, time={}'
                            .format(thread_name, param['block_num'], self._current_time()))
-        stream_id = sess.request('GET', url.path, headers=param['headers'])
+
+        if self._enable_trace_log:
+            self._send_log.append((self._current_time(), param['block_num']))
+
         return stream_id
 
     def _receive_response(self, url_id, stream_id):
@@ -208,7 +212,7 @@ class MultiHTTPDownloader(object):
                            .format(thread_name, block_num, self._current_time(), stream_id))
 
         if self._enable_trace_log:
-            self._trace_log.append((self._current_time(), block_num))
+            self._receive_log.append((self._current_time(), block_num))
 
     def _download(self, url_id):
 
