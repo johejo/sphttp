@@ -77,10 +77,10 @@ class MultiHTTPDownloader(object):
             begin += self._split_size
 
         if reminder:
-            self._num_of_request += 1
             end = begin + reminder - 1
             self._params.append({'block_num': self._num_of_request,
                                  'headers': {'Range': 'bytes={0}-{1}'.format(begin, end)}})
+            self._num_of_request += 1
 
         self._threads = [threading.Thread(target=self._download, args=(i,)) for i in range(self._num_of_host)]
         self._buffer = [None] * self._num_of_request
@@ -92,8 +92,8 @@ class MultiHTTPDownloader(object):
         self._previous_read_count = [0] * self._num_of_host
 
         self._enable_trace_log = enable_trace_log
+        self._begin_time = None
         if self._enable_trace_log:
-            self._begin_time = None
             self._trace_log = []
 
         self._logger.debug('Init')
@@ -102,8 +102,7 @@ class MultiHTTPDownloader(object):
         if self._is_started is False:
             self._is_started = True
 
-            if self._enable_trace_log:
-                self._begin_time = time.monotonic()
+            self._begin_time = time.monotonic()
 
             for thread in self._threads:
                 thread.start()
@@ -201,8 +200,8 @@ class MultiHTTPDownloader(object):
         self._receive_count += 1
 
         block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
-        self._logger.debug('Receive response: thread_name={}, time={}'
-                           .format(thread_name, self._current_time()))
+        self._logger.debug('Receive response: thread_name={}, block_num={}, time={}'
+                           .format(thread_name, block_num, self._current_time()))
 
         self._buffer[block_num] = resp.read()
         self._logger.debug('Get chunk: thread_name={}, block_num={}, time={}, stream_id={}'
