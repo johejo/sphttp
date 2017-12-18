@@ -48,21 +48,21 @@ class MultiHTTPDownloader(object):
         self.length = length[0]
 
         self._sessions = []
-        self._multi_stream_setting = {}
+        self._multi_stream_setting = []
         for i, url in enumerate(urls):
             try:
                 num_of_stream = multi_stream_setting[url]
             except KeyError:
-                num_of_stream = 1
+                num_of_stream = 0
                 conn = HTTPConnection
             else:
                 conn = HTTP20Connection
             finally:
                 url = self._urls[i]
+                self._multi_stream_setting.append(num_of_stream)
                 self._sessions.append(conn(host='{}:{}'.format(url.host, url.port),
                                            window_manager=SphttpFlowControlManager,
                                            verify=self._verify))
-                self._multi_stream_setting[url] = num_of_stream
 
         self._num_of_request = self.length // self._split_size
         reminder = self.length % self._split_size
@@ -140,11 +140,12 @@ class MultiHTTPDownloader(object):
             return self._calc_inverse(url_id)
 
     def _measure_diff(self, url_id):
+        n = self._multi_stream_setting[url_id]
         previous = self._previous_read_count[url_id]
         current = self._receive_count
         self._previous_read_count[url_id] = current
 
-        diff = current - previous - self._num_of_host
+        diff = current - previous - n - (self._num_of_host - 1)
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         if diff < 0:
@@ -170,36 +171,63 @@ class MultiHTTPDownloader(object):
 
         return pos
 
-    def _download(self, url_id):
+    def _get_param(self, url_id):
+        pos = min(self._get_request_pos(url_id), len(self._params) - 1)
+        param = self._params.custom_pop(pos)
+
+        return param
+
+    def _send_request(self, url_id):
         sess = self._sessions[url_id]
         url = self._urls[url_id]
+        param = self._get_param(url_id)
         thread_name = threading.currentThread().getName()
 
-        while len(self._params):
-            pos = self._get_request_pos(url_id)
-            if pos > len(self._params) - 1:
-                pos = len(self._params) - 1
+        self._logger.debug('Send request: thread_name={}, block_num={}, time={}'
+                           .format(thread_name, param['block_num'], self._current_time()))
+        stream_id = sess.request('GET', url.path, headers=param['headers'])
+        return stream_id
 
-            param = self._params.custom_pop(pos)
-            self._logger.debug('Send request: thread_name={}, block_num={}, time={}'
-                               .format(thread_name, param['block_num'], time.monotonic() - self._begin_time))
-            sess.request('GET', url.path, headers=param['headers'])
+    def _receive_response(self, url_id, stream_id):
+        sess = self._sessions[url_id]
+        thread_name = threading.currentThread().getName()
+
+        if stream_id is None:
             resp = sess.get_response()
+        else:
+            resp = sess.get_response(stream_id)
 
-            self._host_usage_count[url_id] += 1
-            self._receive_count += 1
+        self._host_usage_count[url_id] += 1
+        self._receive_count += 1
 
-            block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
-            self._logger.debug('Receive response: thread_name={}, time={}'
-                               .format(thread_name, time.monotonic() - self._begin_time))
+        block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
+        self._logger.debug('Receive response: thread_name={}, time={}'
+                           .format(thread_name, self._current_time()))
 
-            body = resp.read()
-            self._buffer[block_num] = body
-            self._logger.debug('Get chunk: thread_name={}, block_num={}, time={}'
-                               .format(thread_name, block_num, time.monotonic() - self._begin_time))
+        self._buffer[block_num] = resp.read()
+        self._logger.debug('Get chunk: thread_name={}, block_num={}, time={}, stream_id={}'
+                           .format(thread_name, block_num, self._current_time(), stream_id))
 
-            if self._enable_trace_log:
-                self._trace_log.append((time.monotonic() - self._begin_time, block_num))
+        if self._enable_trace_log:
+            self._trace_log.append((self._current_time(), block_num))
+
+    def _download(self, url_id):
+
+        n = self._multi_stream_setting[url_id]
+
+        while len(self._params):
+            stream_ids = []
+            if n != 0:
+                for i in range(n):
+                    if len(self._params) == 0:
+                        break
+
+                    stream_ids.append(self._send_request(url_id))
+            else:
+                stream_ids.append(self._send_request(url_id))
+
+            for stream_id in stream_ids:
+                self._receive_response(url_id, stream_id)
 
     def _concatenate_buffer(self):
         concatenated = bytearray()
@@ -221,6 +249,9 @@ class MultiHTTPDownloader(object):
             return self._concatenate_buffer()
 
         return concatenated
+
+    def _current_time(self):
+        return time.monotonic() - self._begin_time
 
     def _is_completed(self):
         if self._read_index == self._num_of_request:
