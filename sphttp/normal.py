@@ -36,9 +36,6 @@ class MultiHTTPDownloader(object):
         self._logger = logger
 
         self._sessions = [requests.Session() for _ in self._urls]
-        # for url, sess in zip(self._urls, self._sessions):
-        #     prefix = str(URL(url).parent)
-        #     sess.mount(prefix, HTTP20Adapter(SphttpFlowControlManager))
         length = [int(sess.head(url, verify=self._verify).headers['content-length']) for url, sess in
                   zip(self._urls, self._sessions)]
 
