@@ -20,7 +20,8 @@ setup(
     keywords=['HTTP', 'HTTP/2', 'http/2', 'http-client', 'multi-http'],
     install_requires=[
         'hyper>=0.7.0',
-        'requests>=2.18.4'
+        'requests>=2.18.4',
+        'yarl==0.14.2',
     ],
 
     classifiers=[
