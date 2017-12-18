@@ -4,9 +4,9 @@ from logging import getLogger, NullHandler
 
 import requests
 
+from .algorithm import DelayRequestAlgorithm
 from .exception import FileSizeError
 from .utils import match_all, CustomDeque
-from sphttp.algorithm import DelayRequestAlgorithm
 
 local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
@@ -22,6 +22,7 @@ class MultiHTTPDownloader(object):
                  split_size=DEFAULT_SPLIT_SIZE,
                  sleep_sec=DEFAULT_SLEEP_SEC,
                  enable_trace_log=False,
+                 verify=True,
                  delay_request_algorithm=DelayRequestAlgorithm.NORMAL,
                  logger=local_logger,
                  ):
@@ -30,11 +31,16 @@ class MultiHTTPDownloader(object):
         self._num_of_host = len(self._urls)
         self._split_size = split_size
         self._sleep_sec = sleep_sec
+        self._verify = verify
         self._delay_request_algorithm = delay_request_algorithm
         self._logger = logger
 
         self._sessions = [requests.Session() for _ in self._urls]
-        length = [int(sess.head(url).headers['content-length']) for url, sess in zip(self._urls, self._sessions)]
+        # for url, sess in zip(self._urls, self._sessions):
+        #     prefix = str(URL(url).parent)
+        #     sess.mount(prefix, HTTP20Adapter(SphttpFlowControlManager))
+        length = [int(sess.head(url, verify=self._verify).headers['content-length']) for url, sess in
+                  zip(self._urls, self._sessions)]
 
         if match_all(length) is False:
             message = 'File size differs for each host.'
@@ -66,13 +72,13 @@ class MultiHTTPDownloader(object):
                                  'headers': {'Range': 'bytes={0}-{1}'.format(begin, end)}})
 
         self._threads = [threading.Thread(target=self._download, args=(i,)) for i in range(self._num_of_host)]
-        self._buffer = [None for _ in range(self._num_of_request)]
+        self._buffer = [None] * self._num_of_request
         self._is_started = False
         self._read_index = 0
 
         self._receive_count = 0
-        self._host_usage_count = [0 for _ in range(self._num_of_host)]
-        self._previous_read_count = [0 for _ in range(self._num_of_host)]
+        self._host_usage_count = [0] * self._num_of_host
+        self._previous_read_count = [0] * self._num_of_host
 
         self._enable_trace_log = enable_trace_log
         if self._enable_trace_log:
@@ -165,7 +171,7 @@ class MultiHTTPDownloader(object):
 
             param = self._params.custom_pop(pos)
             self._logger.debug('Send request: thread_name={}, block_num={}'.format(thread_name, param['block_num']))
-            resp = sess.get(url, headers=param['headers'])
+            resp = sess.get(url, headers=param['headers'], verify=self._verify)
 
             self._host_usage_count[url_id] += 1
             self._receive_count += 1

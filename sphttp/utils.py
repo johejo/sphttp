@@ -1,10 +1,10 @@
-from urllib.parse import urlparse
 from collections import deque
+from urllib.parse import urlparse
 
 import requests
 from hyper import HTTP20Connection
-from hyper.tls import init_context
 from hyper.http20.window import BaseFlowControlManager
+from hyper.tls import init_context
 
 from .exception import StatusCodeError, NoContentLength, NoAcceptRanges, SchemeError
 
@@ -16,8 +16,8 @@ class SphttpFlowControlManager(BaseFlowControlManager):
     def increase_window_size(self, frame_size):
         return frame_size * 2
 
-    def blocked(self):
-        return self.initial_window_size - self.window_size
+    # def blocked(self):
+    #     return self.initial_window_size - self.window_size
 
 
 def get_length(target_url, *, verify=True):
