@@ -50,6 +50,7 @@ class MultiHTTPDownloader(object):
         self._conns = {}
         self._multi_stream_setting = {}
         con_id = 0
+        self._parallel_num = 0
 
         for i, url in enumerate(urls):
             try:
@@ -71,7 +72,8 @@ class MultiHTTPDownloader(object):
                     self._conns[con_id] = conn(host='{}:{}'.format(self._urls[con_id].host, self._urls[con_id].port),
                                                window_manager=SphttpFlowControlManager,
                                                verify=self._verify)
-                con_id += 1
+                    con_id += 1
+                    self._parallel_num += num_of_stream
 
         self._num_of_conn = len(self._conns)
 
@@ -95,7 +97,7 @@ class MultiHTTPDownloader(object):
 
         self._threads = [threading.Thread(target=self._download,
                                           args=(con_id,),
-                                          name=con_id) for con_id in range(self._num_of_conn)]
+                                          name=str(con_id)) for con_id in range(self._num_of_conn)]
         self._buffer = [None] * self._num_of_request
         self._is_started = False
         self._read_index = 0
@@ -156,8 +158,7 @@ class MultiHTTPDownloader(object):
         previous = self._previous_read_count[conn_id]
         current = self._receive_count
         self._previous_read_count[conn_id] = current
-
-        diff = current - previous - (self._num_of_conn - 1)
+        diff = current - previous - self._parallel_num
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         pos = max(0, diff)
