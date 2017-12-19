@@ -14,7 +14,7 @@ local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
 
 DEFAULT_SPLIT_SIZE = 10 ** 6
-DEFAULT_SLEEP_SEC = 0.01
+DEFAULT_SLEEP_SEC = 0.05
 
 
 class MultiHTTPDownloader(object):
@@ -104,7 +104,7 @@ class MultiHTTPDownloader(object):
 
         self._receive_count = 0
         self._host_usage_count = [0] * self._num_of_conn
-        self._previous_read_count = [0] * self._num_of_conn
+        self._previous_receive_count = [0] * self._num_of_conn
 
         self._enable_trace_log = enable_trace_log
         self._begin_time = None
@@ -155,9 +155,9 @@ class MultiHTTPDownloader(object):
             return self._calc_inverse(conn_id)
 
     def _measure_diff(self, conn_id):
-        previous = self._previous_read_count[conn_id]
+        previous = self._previous_receive_count[conn_id]
         current = self._receive_count
-        self._previous_read_count[conn_id] = current
+        self._previous_receive_count[conn_id] = current
         diff = current - previous - self._parallel_num
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
@@ -210,16 +210,16 @@ class MultiHTTPDownloader(object):
         else:
             resp = conn.get_response(stream_id)
 
-        self._host_usage_count[conn_id] += 1
-        self._receive_count += 1
-
         block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
-        self._logger.debug('Receive response: thread_name={}, block_num={}, time={}'
-                           .format(thread_name, block_num, self._current_time()))
+        # self._logger.debug('Receive response: thread_name={}, block_num={}, time={}'
+        #                    .format(thread_name, block_num, self._current_time()))
 
         self._buffer[block_num] = resp.read()
         self._logger.debug('Get chunk: thread_name={}, block_num={}, time={}, stream_id={}'
                            .format(thread_name, block_num, self._current_time(), stream_id))
+
+        self._host_usage_count[conn_id] += 1
+        self._receive_count += 1
 
         if self._enable_trace_log:
             self._receive_log.append((self._current_time(), block_num))

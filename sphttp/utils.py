@@ -14,7 +14,7 @@ REDIRECT_STATUSES = [301, 302, 303, 307, 308]
 class SphttpFlowControlManager(BaseFlowControlManager):
 
     def increase_window_size(self, frame_size):
-        increase = self.window_size * 2
+        increase = self.window_size * 10
         future_window_size = self.window_size - frame_size + increase
         if future_window_size >= 2147483647:
             return 0
