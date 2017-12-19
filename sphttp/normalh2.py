@@ -7,7 +7,7 @@ from hyper import HTTPConnection, HTTP20Connection
 from yarl import URL
 
 from .algorithm import DelayRequestAlgorithm
-from .exception import FileSizeError, ParameterPositionError
+from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError
 from .utils import match_all, CustomDeque, SphttpFlowControlManager
 
 local_logger = getLogger(__name__)
@@ -28,6 +28,7 @@ class MultiHTTPDownloader(object):
                  delay_request_algorithm=DelayRequestAlgorithm.DIFFERENCES,
                  multi_stream_setting=None,
                  multi_connection_setting=None,
+                 static_delay_request_degree=None,
                  logger=local_logger, ):
 
         if multi_stream_setting is None:
@@ -106,6 +107,9 @@ class MultiHTTPDownloader(object):
         self._host_usage_count = [0] * self._num_of_conn
         self._previous_receive_count = [0] * self._num_of_conn
 
+        if self._delay_request_algorithm is DelayRequestAlgorithm.STATIC and static_delay_request_degree:
+            self._static_delay_request_degree = static_delay_request_degree
+
         self._enable_trace_log = enable_trace_log
         self._begin_time = None
         if self._enable_trace_log:
@@ -153,6 +157,10 @@ class MultiHTTPDownloader(object):
             return self._measure_diff(conn_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE:
             return self._calc_inverse(conn_id)
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.STATIC:
+            return self._static_delay_request_degree
+        else:
+            raise DelayRequestAlgorithmError
 
     def _measure_diff(self, conn_id):
         previous = self._previous_receive_count[conn_id]
