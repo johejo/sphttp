@@ -157,8 +157,7 @@ class MultiHTTPDownloader(object):
     def _measure_diff(self, conn_id):
         previous = self._previous_receive_count[conn_id]
         current = self._receive_count
-        self._previous_receive_count[conn_id] = current
-        diff = current - previous - self._parallel_num
+        diff = current - previous - self._parallel_num - self._multi_stream_setting[conn_id] - 1
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         pos = max(0, diff)
@@ -247,6 +246,7 @@ class MultiHTTPDownloader(object):
                     stream_ids.append(self._send_request(conn_id))
                 except ParameterPositionError:
                     return
+            self._previous_receive_count[conn_id] = self._receive_count
 
             for stream_id in stream_ids:
                 self._receive_response(conn_id, stream_id)
