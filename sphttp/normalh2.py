@@ -158,9 +158,15 @@ class MultiHTTPDownloader(object):
         elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE:
             return self._calc_inverse(conn_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.STATIC:
-            return self._static_delay_request_degree
+            return self._static_diff(conn_id)
         else:
             raise DelayRequestAlgorithmError
+
+    def _static_diff(self, conn_id):
+        if conn_id == 0:
+            return self._static_delay_request_degree
+        else:
+            return 0
 
     def _measure_diff(self, conn_id):
         previous = self._previous_receive_count[conn_id]
