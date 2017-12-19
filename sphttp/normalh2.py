@@ -157,7 +157,7 @@ class MultiHTTPDownloader(object):
     def _measure_diff(self, conn_id):
         previous = self._previous_receive_count[conn_id]
         current = self._receive_count
-        diff = current - previous - self._parallel_num - self._multi_stream_setting[conn_id] - 1
+        diff = current - previous - self._multi_stream_setting[conn_id] - 1
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         pos = max(0, diff)
