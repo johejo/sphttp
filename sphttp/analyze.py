@@ -1,21 +1,23 @@
 from statistics import mean, stdev
 
 
-def analyze_log(trace_log):
+def separate_log(log):
+    time_stamps = []
+    block_numbers = []
+    for t, bn in log:
+        time_stamps.append(t)
+        block_numbers.append(bn)
 
-    time = []
-    block_nums = []
+    return time_stamps, block_numbers
 
-    for log in trace_log:
-        t, bn = log
-        time.append(t)
-        block_nums.append(bn)
+
+def analyze_receive_log(receive_log):
+    time, block_nums = separate_log(receive_log)
     
     stock = []
     stock_count = []
     return_count = []
     n = 0
-    end = max(time)
 
     for t, o in zip(time, block_nums):
         if n == o:
@@ -35,9 +37,9 @@ def analyze_log(trace_log):
         else:
             rn = 0
             stock.append(o)
-        if end * 0.25 < t < end * 0.75:
-            stock_count.append(len(stock))
-            return_count.append(rn)
+
+        stock_count.append(len(stock))
+        return_count.append(rn)
 
     rcmean, rcstdev, scmean, scstdev = mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
 

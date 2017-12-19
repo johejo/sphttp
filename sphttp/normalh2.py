@@ -14,7 +14,7 @@ local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
 
 DEFAULT_SPLIT_SIZE = 10 ** 6
-DEFAULT_SLEEP_SEC = 0.05
+DEFAULT_SLEEP_SEC = 0.1
 
 
 class MultiHTTPDownloader(object):
