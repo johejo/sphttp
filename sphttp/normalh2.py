@@ -7,7 +7,7 @@ from hyper import HTTPConnection, HTTP20Connection
 from yarl import URL
 
 from .algorithm import DelayRequestAlgorithm
-from .exception import FileSizeError
+from .exception import FileSizeError, ParameterPositionError
 from .utils import match_all, CustomDeque, SphttpFlowControlManager
 
 local_logger = getLogger(__name__)
@@ -181,16 +181,26 @@ class MultiHTTPDownloader(object):
         return pos
 
     def _get_param(self, conn_id):
-        pos = min(self._get_request_pos(conn_id), len(self._params) - 1)
+        pos = self._get_request_pos(conn_id)
+        remain = len(self._params) - 1
+        if pos * 0.9 > remain:
+            raise ParameterPositionError
+        else:
+            pos = min(pos, remain)
+
         param = self._params.custom_pop(pos)
 
         return param
 
     def _send_request(self, conn_id):
         conn = self._conns[conn_id]
-        url = self._urls[conn_id]
-        param = self._get_param(conn_id)
+        try:
+            param = self._get_param(conn_id)
+        except ParameterPositionError:
+            raise
+
         thread_name = threading.currentThread().getName()
+        url = self._urls[conn_id]
 
         stream_id = conn.request('GET', url.path, headers=param['headers'])
         self._logger.debug('Send request: thread_name={}, block_num={}, time={}'
@@ -233,7 +243,10 @@ class MultiHTTPDownloader(object):
             for i in range(n):
                 if len(self._params) == 0:
                     break
-                stream_ids.append(self._send_request(conn_id))
+                try:
+                    stream_ids.append(self._send_request(conn_id))
+                except ParameterPositionError:
+                    return
 
             for stream_id in stream_ids:
                 self._receive_response(conn_id, stream_id)

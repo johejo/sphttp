@@ -32,3 +32,7 @@ class SchemeError(SphttpException):
 
 class DelayRequestAlgorithmError(SphttpException):
     pass
+
+
+class ParameterPositionError(SphttpException):
+    pass
