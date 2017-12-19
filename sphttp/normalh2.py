@@ -128,7 +128,7 @@ class MultiHTTPDownloader(object):
                 thread.start()
 
     def close(self):
-        for conn in self._conns:
+        for conn in self._conns.values():
             conn.close()
 
     def generator(self):
@@ -171,7 +171,7 @@ class MultiHTTPDownloader(object):
     def _measure_diff(self, conn_id):
         previous = self._previous_receive_count[conn_id]
         current = self._receive_count
-        diff = current - previous - self._multi_stream_setting[conn_id] - 1
+        diff = current - previous - self._multi_stream_setting[conn_id]
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         pos = max(0, diff)
@@ -216,8 +216,8 @@ class MultiHTTPDownloader(object):
         url = self._urls[conn_id]
 
         stream_id = conn.request('GET', url.path, headers=param['headers'])
-        self._logger.debug('Send request: thread_name={}, block_num={}, time={}'
-                           .format(thread_name, param['block_num'], self._current_time()))
+        self._logger.debug('Send request: thread_name={}, block_num={}, time={}, remain={}'
+                           .format(thread_name, param['block_num'], self._current_time(), len(self._params)))
 
         if self._enable_trace_log:
             self._send_log.append((self._current_time(), param['block_num']))
@@ -228,10 +228,14 @@ class MultiHTTPDownloader(object):
         conn = self._conns[conn_id]
         thread_name = threading.currentThread().getName()
 
-        if stream_id is None:
-            resp = conn.get_response()
-        else:
-            resp = conn.get_response(stream_id)
+        try:
+            if stream_id is None:
+                resp = conn.get_response()
+            else:
+                resp = conn.get_response(stream_id)
+        except ConnectionResetError:
+            self._logger.debug('ConnectionResetErrorOccurred: {}'.format(self._urls[conn_id]))
+            raise
 
         block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
         # self._logger.debug('Receive response: thread_name={}, block_num={}, time={}'
