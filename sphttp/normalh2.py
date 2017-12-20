@@ -50,7 +50,7 @@ class MultiHTTPDownloader(object):
         self._urls = {}
         self._conns = {}
         self._multi_stream_setting = {}
-        con_id = 0
+        conn_id = 0
         self._parallel_num = 0
 
         for i, url in enumerate(urls):
@@ -68,12 +68,12 @@ class MultiHTTPDownloader(object):
                 else:
                     conn = HTTP20Connection
                 finally:
-                    self._multi_stream_setting[con_id] = num_of_stream
-                    self._urls[con_id] = URL(url)
-                    self._conns[con_id] = conn(host='{}:{}'.format(self._urls[con_id].host, self._urls[con_id].port),
-                                               window_manager=SphttpFlowControlManager,
-                                               verify=self._verify)
-                    con_id += 1
+                    self._multi_stream_setting[conn_id] = num_of_stream
+                    self._urls[conn_id] = URL(url)
+                    self._conns[conn_id] = conn(host='{}:{}'.format(self._urls[conn_id].host, self._urls[conn_id].port),
+                                                window_manager=SphttpFlowControlManager,
+                                                verify=self._verify)
+                    conn_id += 1
                     self._parallel_num += num_of_stream
 
         self._num_of_conn = len(self._conns)
@@ -106,6 +106,7 @@ class MultiHTTPDownloader(object):
         self._receive_count = 0
         self._host_usage_count = [0] * self._num_of_conn
         self._previous_receive_count = [0] * self._num_of_conn
+        self._previous_param = [CustomDeque() for _ in self._conns]
 
         if self._delay_request_algorithm is DelayRequestAlgorithm.STATIC and static_delay_request_degree:
             self._static_delay_request_degree = static_delay_request_degree
@@ -172,6 +173,10 @@ class MultiHTTPDownloader(object):
         previous = self._previous_receive_count[conn_id]
         current = self._receive_count
         diff = current - previous - self._multi_stream_setting[conn_id]
+
+        if self._host_usage_count[conn_id] == max(self._host_usage_count):
+            diff = 0
+
         self._logger.debug('Diff: thread_name={}, diff={}'.format(threading.currentThread().getName(), diff))
 
         pos = max(0, diff)
@@ -220,6 +225,7 @@ class MultiHTTPDownloader(object):
         stream_id = conn.request('GET', url.path, headers=param['headers'])
         self._logger.debug('Send request: thread_name={}, block_num={}, time={}, remain={}'
                            .format(thread_name, param['block_num'], self._current_time(), len(self._params)))
+        self._previous_param[conn_id].append(param)
 
         if self._enable_trace_log:
             self._send_log.append((self._current_time(), param['block_num']))
@@ -239,7 +245,7 @@ class MultiHTTPDownloader(object):
             message = 'ConnectionResetError has occurred.: {}'.format(self._urls[conn_id])
             raise SphttpConnectionError(message)
 
-        block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
+        block_num = self._get_block_number(resp.headers[b'Content-Range'][0].decode())
         # self._logger.debug('Receive response: thread_name={}, block_num={}, time={}'
         #                    .format(thread_name, block_num, self._current_time()))
 
@@ -259,7 +265,7 @@ class MultiHTTPDownloader(object):
 
         while len(self._params):
             stream_ids = []
-            for i in range(n):
+            for _ in range(n):
                 if len(self._params) == 0:
                     break
                 try:
@@ -269,7 +275,13 @@ class MultiHTTPDownloader(object):
             self._previous_receive_count[conn_id] = self._receive_count
 
             for stream_id in stream_ids:
-                self._receive_response(conn_id, stream_id)
+                try:
+                    self._receive_response(conn_id, stream_id)
+                except SphttpConnectionError:
+                    self._logger.debug('Connection abort: {}'.format(self._urls[conn_id]))
+                    for _ in range(n):
+                        self._params.appendleft(self._previous_param[conn_id].pop())
+                    return
 
     def _concatenate_buffer(self):
         concatenated = bytearray()
@@ -285,11 +297,13 @@ class MultiHTTPDownloader(object):
             i += 1
 
         self._read_index = i
+        length = len(concatenated)
 
-        if len(concatenated) == 0:
+        if length == 0:
             time.sleep(self._sleep_sec)
             return self._concatenate_buffer()
 
+        self._logger.debug('Return: bytes={}, num={}'.format(length, length // self._split_size))
         return concatenated
 
     def _current_time(self):
