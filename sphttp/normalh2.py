@@ -76,7 +76,7 @@ class MultiHTTPDownloader(object):
                     conn_id += 1
                     self._parallel_num += num_of_stream
 
-        self._num_of_conn = len(self._conns)
+        num_of_conn = len(self._conns)
 
         self._num_of_request = self.length // self._split_size
         reminder = self.length % self._split_size
@@ -98,14 +98,14 @@ class MultiHTTPDownloader(object):
 
         self._threads = [threading.Thread(target=self._download,
                                           args=(con_id,),
-                                          name=str(con_id)) for con_id in range(self._num_of_conn)]
+                                          name=str(con_id)) for con_id in range(num_of_conn)]
         self._buffer = [None] * self._num_of_request
         self._is_started = False
         self._read_index = 0
 
         self._receive_count = 0
-        self._host_usage_count = [0] * self._num_of_conn
-        self._previous_receive_count = [0] * self._num_of_conn
+        self._host_usage_count = [0] * num_of_conn
+        self._previous_receive_count = [0] * num_of_conn
         self._previous_param = [CustomDeque() for _ in self._conns]
 
         if self._delay_request_algorithm is DelayRequestAlgorithm.STATIC and static_delay_request_degree:
@@ -274,12 +274,12 @@ class MultiHTTPDownloader(object):
                     return
             self._previous_receive_count[conn_id] = self._receive_count
 
-            for stream_id in stream_ids:
+            for i, stream_id in enumerate(stream_ids):
                 try:
                     self._receive_response(conn_id, stream_id)
                 except SphttpConnectionError:
                     self._logger.debug('Connection abort: {}'.format(self._urls[conn_id]))
-                    for _ in range(n):
+                    for _ in range(i + 1):
                         self._params.appendleft(self._previous_param[conn_id].pop())
                     return
 
