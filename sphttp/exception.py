@@ -36,3 +36,7 @@ class DelayRequestAlgorithmError(SphttpException):
 
 class ParameterPositionError(SphttpException):
     pass
+
+
+class SphttpConnectionError(SphttpException):
+    pass

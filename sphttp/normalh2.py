@@ -7,7 +7,7 @@ from hyper import HTTPConnection, HTTP20Connection
 from yarl import URL
 
 from .algorithm import DelayRequestAlgorithm
-from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError
+from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError
 from .utils import match_all, CustomDeque, SphttpFlowControlManager
 
 local_logger = getLogger(__name__)
@@ -195,11 +195,13 @@ class MultiHTTPDownloader(object):
 
     def _get_param(self, conn_id):
         pos = self._get_request_pos(conn_id)
-        remain = len(self._params) - 1
-        if pos * 0.9 > remain:
+        remain = len(self._params)
+        if remain == 1:
+            pos = 0
+        elif pos * 0.9 > remain:
             raise ParameterPositionError
         else:
-            pos = min(pos, remain)
+            pos = min(pos, remain - 1)
 
         param = self._params.custom_pop(pos)
 
@@ -234,8 +236,8 @@ class MultiHTTPDownloader(object):
             else:
                 resp = conn.get_response(stream_id)
         except ConnectionResetError:
-            self._logger.debug('ConnectionResetErrorOccurred: {}'.format(self._urls[conn_id]))
-            raise
+            message = 'ConnectionResetError has occurred.: {}'.format(self._urls[conn_id])
+            raise SphttpConnectionError(message)
 
         block_num = self._get_block_number(resp.headers[b'content-range'][0].decode())
         # self._logger.debug('Receive response: thread_name={}, block_num={}, time={}'
