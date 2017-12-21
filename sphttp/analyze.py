@@ -11,15 +11,15 @@ def separate_log(log):
     return time_stamps, block_numbers
 
 
-def analyze_receive_log(receive_log):
-    time, block_nums = separate_log(receive_log)
+def analyze_receive_log(recv_log):
+    _, block_nums = separate_log(recv_log)
     
     stock = []
     stock_count = []
     return_count = []
     n = 0
 
-    for t, o in zip(time, block_nums):
+    for o in block_nums:
         if n == o:
             rn = 1
             n += 1
@@ -44,3 +44,35 @@ def analyze_receive_log(receive_log):
     rcmean, rcstdev, scmean, scstdev = mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
 
     return rcmean, rcstdev, scmean, scstdev
+
+
+def calc_good_put(recv_log):
+    t, bn = separate_log(recv_log)
+    return max(t) / max(bn)
+
+
+def calc_initial_buffering_time(recv_log):
+    t, bn = separate_log(recv_log)
+    finish_time, last_block_num = max(t), max(bn)
+    good_put = finish_time / last_block_num
+
+    initial_buffering = finish_time - (bn[t.index(finish_time)] / good_put)
+
+    return initial_buffering
+
+
+def calc_ave_delay_time(recv_log, split_size):
+    t, bn = separate_log(recv_log)
+    finish_time = max(t)
+    ave_arrival_desired_interval = finish_time / split_size
+
+    d = []
+    for i, ti, bi in enumerate(recv_log):
+        if ti > ave_arrival_desired_interval * i:
+            d.append(ti - ave_arrival_desired_interval * i)
+        else:
+            d.append(0)
+
+    ave_delay_time = mean(d)
+
+    return ave_delay_time
