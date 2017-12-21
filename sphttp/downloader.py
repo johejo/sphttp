@@ -32,7 +32,7 @@ class Downloader(object):
                  static_delay_req_val=None,
                  invalid_block_count_threshold=DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD,
                  init_delay_coef=DEFAULT_INIT_DELAY_COEF,
-                 logger=local_logger, ):
+                 logger=local_logger):
 
         self._split_size = abs(split_size)
         self._sleep_sec = sleep_sec
