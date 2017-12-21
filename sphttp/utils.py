@@ -1,10 +1,12 @@
-from collections import deque
 from urllib.parse import urlparse
+import asyncio
+import time
 
 import requests
 from hyper import HTTP20Connection
 from hyper.http20.window import BaseFlowControlManager
 from hyper.tls import init_context
+import aiohttp
 
 from .exception import StatusCodeError, NoContentLength, NoAcceptRanges, SchemeError
 
@@ -23,6 +25,23 @@ class SphttpFlowControlManager(BaseFlowControlManager):
 
     def blocked(self):
         return self.initial_window_size - self.window_size
+
+
+def async_get_length(urls):
+    length = []
+    delays = {}
+
+    async def send_head_request(url):
+        async with aiohttp.ClientSession() as sess:
+            begin = time.monotonic()
+            async with sess.head(url) as resp:
+                length.append(int(resp.headers['Content-Length']))
+                delays[url] = time.monotonic() - begin
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(asyncio.wait([send_head_request(url) for url in urls]))
+
+    return length, delays
 
 
 def get_length(target_url, *, verify=True):
@@ -122,13 +141,3 @@ def get_length_hyper(target_url, *, ssl_context=None):
 def init_http2_multi_stream_setting(http2_server_urls):
     setting = {url: 1 for url in http2_server_urls}
     return setting
-
-
-class CustomDeque(deque):
-    def __init__(self):
-        super().__init__()
-
-    def custom_pop(self, pos):
-        value = self[pos]
-        del self[pos]
-        return value

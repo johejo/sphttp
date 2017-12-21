@@ -1,4 +1,4 @@
-sphttp: HTTP split downloader supporting HTTP/2
+sphttp: HTTP split downloader supporting multi source
 ===============================================
 
 # Description
