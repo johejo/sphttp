@@ -251,7 +251,6 @@ class Downloader(object):
     def _download(self, conn_id):
 
         while len(self._params):
-            print(self._invalid_block_count)
             try:
                 param = self._send_req(conn_id)
             except ParameterPositionError:
@@ -273,7 +272,6 @@ class Downloader(object):
 
             pos = self._unreceived_block_param.index(param)
             self._unreceived_block_param.pop_at_any_pos(pos)
-            print('o', len(self._unreceived_block_param))
 
     def _concat_buf(self):
         b = bytearray()
