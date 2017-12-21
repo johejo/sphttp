@@ -35,13 +35,15 @@ class Downloader(object):
         self._delay_request_algorithm = delay_request_algorithm
         self._logger = logger
 
-        length, delays = async_get_length(urls)
+        length, raw_delays = async_get_length(urls)
 
         if match_all(length) is False:
             message = 'File size differs for each host.'
             raise FileSizeError(message)
 
         self.length = length[0]
+        delay_min = min(raw_delays.values())
+        self._initial_delay = [int(delay / delay_min) - 1 for delay in raw_delays.values()]
 
         self._urls = [URL(url) for url in urls]
         self._conns = [HTTPConnection(host='{}:{}'.format(url.host, url.port),
