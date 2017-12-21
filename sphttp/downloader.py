@@ -30,6 +30,7 @@ class Downloader(object):
                  enable_dup_req=True,
                  static_delay_req_val=None,
                  invalid_block_count_threshold=DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD,
+                 init_delay_coef=5,
                  logger=local_logger, ):
 
         self._split_size = abs(split_size)
@@ -53,7 +54,8 @@ class Downloader(object):
                                       window_manager=SphttpFlowControlManager,
                                       verify=self._verify) for url in self._urls]
         min_delay = min(raw_delays.values())
-        self._initial_delay = {URL(url): (int(delay / min_delay) - 1) * 10 for url, delay in raw_delays.items()}
+        self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
+                            for url, delay in raw_delays.items()}
 
         self._num_of_req = self.length // self._split_size
         reminder = self.length % self._split_size
@@ -161,7 +163,7 @@ class Downloader(object):
 
         if self._initial[conn_id]:
             url = self._urls[conn_id]
-            diff = self._initial_delay[url]
+            diff = self._init_delay[url]
             self._initial[conn_id] = False
         else:
             if self._host_usage_count[conn_id] == max(self._host_usage_count):
