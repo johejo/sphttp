@@ -1,4 +1,4 @@
-import threading
+from threading import Thread, Event
 import time
 from logging import getLogger, NullHandler
 
@@ -16,7 +16,7 @@ local_logger.addHandler(NullHandler())
 DEFAULT_SPLIT_SIZE = 10 ** 6
 DEFAULT_SLEEP_SEC = 0.1
 DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD = 20
-DEFAULT_INIT_DELAY_COEF = 5
+DEFAULT_INIT_DELAY_COEF = 1
 
 
 class Downloader(object):
@@ -54,12 +54,17 @@ class Downloader(object):
         self._conns = [HTTPConnection(host='{}:{}'.format(url.host, url.port),
                                       window_manager=SphttpFlowControlManager,
                                       verify=self._verify) for url in self._urls]
-        min_delay = min(raw_delays.values())
-        self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
-                            for url, delay in raw_delays.items()}
-
         self._num_of_req = self.length // self._split_size
         reminder = self.length % self._split_size
+
+        min_delay = min(raw_delays.values())
+        self._init_delay = {}
+        for url, delay in raw_delays.items():
+            d = min(int((delay / min_delay - 1) * init_delay_coef), self._num_of_req)
+            if d > 3:
+                self._init_delay[URL(url)] = d
+            else:
+                self._init_delay[URL(url)] = 0
 
         self._params = AnyPoppableDeque()
         begin = 0
@@ -78,15 +83,14 @@ class Downloader(object):
 
         num_of_conns = len(self._conns)
 
-        self._threads = [threading.Thread(target=self._download,
-                                          args=(conn_id,),
-                                          name=str(conn_id)) for conn_id in range(num_of_conns)]
+        self._threads = [Thread(target=self._download, args=(conn_id,), name=str(conn_id))
+                         for conn_id in range(num_of_conns)]
         self._buf = [None] * self._num_of_req
         self._is_started = False
         self._read_index = 0
         self._initial = [True] * num_of_conns
         self._invalid_block_count = 0
-        self._unreceived_block_param = AnyPoppableDeque()
+        self._unreceived_block_param = [None] * self._num_of_req
 
         self._receive_count = 0
         self._host_usage_count = [0] * num_of_conns
@@ -102,6 +106,8 @@ class Downloader(object):
             self._recv_log = []
             self._send_log = []
 
+        self._event = Event()
+
         self._logger.debug('Init')
 
     def start(self):
@@ -114,8 +120,7 @@ class Downloader(object):
                 thread.start()
 
     def close(self):
-        for conn in self._conns:
-            conn.close()
+        self._event.set()
 
     def generator(self):
         if self._is_started is False:
@@ -123,6 +128,7 @@ class Downloader(object):
 
         while self._is_completed() is False:
             yield self._concat_buf()
+        self.close()
 
     def get_trace_log(self):
         if self._enable_trace_log:
@@ -200,7 +206,13 @@ class Downloader(object):
         else:
             pos = min(pos, remain - 1)
 
-        param = self._params.pop_at_any_pos(pos)
+        while True:
+            try:
+                param = self._params.pop_at_any_pos(pos)
+            except IndexError:
+                pos -= 1
+            else:
+                break
 
         return param
 
@@ -208,31 +220,31 @@ class Downloader(object):
         conn = self._conns[conn_id]
         url = self._urls[conn_id]
 
-        if self._enable_dup_req and self._invalid_block_count < self._invalid_block_count_threshold or \
-                conn_id != self._host_usage_count.index(max(self._host_usage_count)):
+        if self._enable_dup_req and self._should_send_dup_req() and self._is_conn_perf_highest(conn_id) and self._buf[self._read_index] is None:
+            param = self._unreceived_block_param[self._read_index]
+            self._logger.debug('Duplicate request: conn_id={}, block_num={}, invalid_block_count={}'
+                               .format(conn_id, param['block_num'], self._invalid_block_count))
+        else:
             try:
                 param = self._get_param(conn_id)
             except ParameterPositionError:
+                self._logger.debug('ParameterError')
                 raise
+            self._previous_param[conn_id].append(param)
+            self._unreceived_block_param[param['block_num']] = param
 
-        else:
-            param = self._unreceived_block_param[0]
-            self._logger.debug('Duplicate request: conn_id={}, block_num={}'.format(conn_id, param['block_num']))
-
-        conn.request('GET', url.path, headers=param['headers'])
         self._logger.debug('Send request: conn_id={}, block_num={}, time={}, remain={}'
                            .format(conn_id, param['block_num'], self._current_time(), len(self._params)))
+        conn.request('GET', url.path, headers=param['headers'])
 
         if self._enable_trace_log:
             self._send_log.append((self._current_time(), param['block_num']))
-
-        return param
 
     def _recv_resp(self, conn_id):
         conn = self._conns[conn_id]
         try:
             resp = conn.get_response()
-        except ConnectionResetError:
+        except (ConnectionResetError, ConnectionAbortedError):
             message = 'ConnectionResetError has occurred.: {}'.format(self._urls[conn_id])
             raise SphttpConnectionError(message)
 
@@ -253,28 +265,27 @@ class Downloader(object):
 
     def _download(self, conn_id):
 
-        while len(self._params):
+        while not self._is_completed():
             try:
-                param = self._send_req(conn_id)
+                self._send_req(conn_id)
             except ParameterPositionError:
-                return
-
-            self._previous_param[conn_id].append(param)
-            self._unreceived_block_param.append(param)
+                break
 
             try:
                 self._recv_resp(conn_id)
             except SphttpConnectionError:
-                self._logger.debug('Connection abort: {}'.format(self._urls[conn_id]))
+                self._logger.debug('Connection abort: conn_id={}, url={}'.format(conn_id, self._urls[conn_id]))
+                self._host_usage_count[conn_id] = 0
                 failed_param = self._previous_param[conn_id].pop()
                 failed_block_num = failed_param['block_num']
                 if self._buf[failed_block_num] is None:
                     self._params.appendleft(self._previous_param[conn_id].pop())
 
-                return
+                break
 
-            pos = self._unreceived_block_param.index(param)
-            self._unreceived_block_param.pop_at_any_pos(pos)
+        self._conns[conn_id].close()
+        self._logger.debug('Finish: conn_id={}'.format(conn_id))
+        self._event.wait()
 
     def _concat_buf(self):
         b = bytearray()
@@ -304,6 +315,19 @@ class Downloader(object):
     def _current_time(self):
         return time.monotonic() - self._begin_time
 
+    def _should_send_dup_req(self):
+        threshold = min(self._invalid_block_count_threshold, len(self._params))
+        if self._invalid_block_count > threshold:
+            return True
+        else:
+            return False
+
+    def _is_conn_perf_highest(self, conn_id):
+        if conn_id == self._host_usage_count.index(max(self._host_usage_count)):
+            return True
+        else:
+            return False
+
     def _is_completed(self):
         if self._read_index == self._num_of_req:
             return True
@@ -315,6 +339,7 @@ class Downloader(object):
 
     def __next__(self):
         if self._is_completed():
+            self.close()
             raise StopIteration
 
         if self._is_started is False:
