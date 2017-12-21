@@ -21,7 +21,7 @@ setup(
     install_requires=[
         'hyper>=0.7.0',
         'requests>=2.18.4',
-        'yarl==0.14.2',
+        'yarl>=0.14.2',
     ],
 
     classifiers=[
