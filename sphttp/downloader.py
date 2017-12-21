@@ -16,6 +16,7 @@ local_logger.addHandler(NullHandler())
 DEFAULT_SPLIT_SIZE = 10 ** 6
 DEFAULT_SLEEP_SEC = 0.1
 DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD = 20
+DEFAULT_INIT_DELAY_COEF = 5
 
 
 class Downloader(object):
@@ -30,7 +31,7 @@ class Downloader(object):
                  enable_dup_req=True,
                  static_delay_req_val=None,
                  invalid_block_count_threshold=DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD,
-                 init_delay_coef=5,
+                 init_delay_coef=DEFAULT_INIT_DELAY_COEF,
                  logger=local_logger, ):
 
         self._split_size = abs(split_size)
