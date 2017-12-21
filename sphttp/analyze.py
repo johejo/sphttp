@@ -67,7 +67,7 @@ def calc_ave_delay_time(recv_log, split_size):
     ave_arrival_desired_interval = finish_time / split_size
 
     d = []
-    for i, ti, bi in enumerate(recv_log):
+    for i, (ti, bi) in enumerate(recv_log):
         if ti > ave_arrival_desired_interval * i:
             d.append(ti - ave_arrival_desired_interval * i)
         else:
