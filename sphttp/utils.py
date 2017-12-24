@@ -35,6 +35,9 @@ def async_get_length(urls):
         async with aiohttp.ClientSession() as sess:
             begin = time.monotonic()
             async with sess.head(url) as resp:
+                if resp.status != 200:
+                    message = 'status={}'.format(resp.status)
+                    raise StatusCodeError(message)
                 length.append(int(resp.headers['Content-Length']))
                 delays[url] = time.monotonic() - begin
 

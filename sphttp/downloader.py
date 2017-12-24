@@ -224,10 +224,14 @@ class Downloader(object):
 
         if self._enable_dup_req and self._should_send_dup_req() \
                 and self._is_conn_perf_highest(conn_id) and self._buf[self._read_index] is None:
+
             param, bad_conn_id = self._sent_block_param[self._read_index]
-            self._bad_conn_ids.append(bad_conn_id)
-            self._logger.debug('Duplicate request: conn_id={}, block_num={}, invalid_block_count={}'
-                               .format(conn_id, param['block_num'], self._invalid_block_count))
+
+            if conn_id not in self._bad_conn_ids:
+                self._bad_conn_ids.append(conn_id)
+
+            self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_num={}, invalid_block_count={}'
+                               .format(conn_id, bad_conn_id, param['block_num'], self._invalid_block_count))
 
         else:
             try:
@@ -251,8 +255,9 @@ class Downloader(object):
         try:
             resp = conn.get_response()
         except (ConnectionResetError, ConnectionAbortedError):
-            message = 'ConnectionResetError has occurred.: {}'.format(self._urls[conn_id])
-            raise SphttpConnectionError(message)
+            if conn_id not in self._bad_conn_ids:
+                self._bad_conn_ids.append(conn_id)
+            raise SphttpConnectionError
 
         block_num = self._get_block_number(resp.headers[b'Content-Range'][0].decode())
 
@@ -268,6 +273,13 @@ class Downloader(object):
 
             self._host_usage_count[conn_id] += 1
             self._receive_count += 1
+
+            c = 0
+            for buf in self._buf:
+                if buf is not None and buf is not True:
+                    c += 1
+
+            self._invalid_block_count = c
 
     def _download(self, conn_id):
 
@@ -310,14 +322,6 @@ class Downloader(object):
 
         self._read_index = i
         length = len(b)
-
-        c = 0
-        for buf in self._buf:
-            if buf is not None and buf is not True:
-                c += 1
-
-        self._invalid_block_count = c
-        print(c, self._read_index)
 
         if length == 0:
             self._event.clear()
