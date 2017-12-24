@@ -31,7 +31,7 @@ def async_get_length(urls):
     length = []
     delays = {}
 
-    async def send_head_request(url):
+    async def init_head_request(url):
         async with aiohttp.ClientSession() as sess:
             begin = time.monotonic()
             async with sess.head(url) as resp:
@@ -42,7 +42,7 @@ def async_get_length(urls):
                 delays[url] = time.monotonic() - begin
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(asyncio.wait([send_head_request(url) for url in urls]))
+    loop.run_until_complete(asyncio.wait([init_head_request(url) for url in urls]))
 
     return length, delays
 
