@@ -9,3 +9,9 @@ class AnyPoppableDeque(deque):
         value = self[pos]
         del self[pos]
         return value
+
+
+class RangeRequestParam(object):
+    def __init__(self, block_id=None, headers=None):
+        self.block_id = block_id
+        self.headers = headers

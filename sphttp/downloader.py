@@ -8,7 +8,7 @@ from yarl import URL
 from .algorithm import DelayRequestAlgorithm
 from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError
 from .utils import match_all, SphttpFlowControlManager, async_get_length
-from .structures import AnyPoppableDeque
+from .structures import AnyPoppableDeque, RangeRequestParam
 
 local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
@@ -52,47 +52,42 @@ class Downloader(object):
                                       window_manager=SphttpFlowControlManager,
                                       verify=self._verify) for url in self._urls]
 
-        self._num_of_req = self.length // self._split_size
+        self._num_req = self.length // self._split_size
         reminder = self.length % self._split_size
 
         min_delay = min(raw_delays.values())
-        self._init_delay = {}
-
-        for url, delay in raw_delays.items():
-            d = min(int((delay / min_delay - 1) * init_delay_coef), self._num_of_req)
-            self._init_delay[URL(url)] = d
+        self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
+                            for url, delay in raw_delays.items()}
 
         self._params = AnyPoppableDeque()
         begin = 0
 
-        for block_num in range(self._num_of_req):
-            end = begin + self._split_size - 1
-            self._params.append({'block_num': block_num,
-                                 'headers': {'Range': 'bytes={0}-{1}'.format(begin, end)}})
+        for block_id in range(self._num_req):
+            self._params.append(RangeRequestParam(block_id, {'Range': 'bytes={0}-{1}'
+                                                  .format(begin, begin + self._split_size - 1)}))
             begin += self._split_size
 
         if reminder:
-            end = begin + reminder - 1
-            self._params.append({'block_num': self._num_of_req,
-                                 'headers': {'Range': 'bytes={0}-{1}'.format(begin, end)}})
-            self._num_of_req += 1
+            self._params.append(RangeRequestParam(self._num_req, {'Range': 'bytes={0}-{1}'
+                                                  .format(begin, begin + self._split_size - 1)}))
+            self._num_req += 1
 
-        num_of_conns = len(self._conns)
+        num_conns = len(self._conns)
 
         self._threads = [Thread(target=self._download, args=(conn_id,), name=str(conn_id))
-                         for conn_id in range(num_of_conns)]
-        self._buf = [None] * self._num_of_req
+                         for conn_id in range(num_conns)]
+        self._buf = [None] * self._num_req
         self._is_started = False
         self._read_index = 0
-        self._initial = [True] * num_of_conns
+        self._initial = [True] * num_conns
         self._invalid_block_count = 0
-        self._sent_block_param = [None] * self._num_of_req
+        self._sent_block_param = [None] * self._num_req
         self._bad_conn_ids = []
 
         self._receive_count = 0
-        self._host_usage_count = [0] * num_of_conns
-        self._previous_receive_count = [0] * num_of_conns
-        self._previous_param = [{} for _ in self._conns]
+        self._host_usage_count = [0] * num_conns
+        self._previous_receive_count = [0] * num_conns
+        self._previous_param = [RangeRequestParam() for _ in self._conns]
 
         if self._delay_req_algo is DelayRequestAlgorithm.STATIC and static_delay_req_val:
             self._static_delay_req_val = static_delay_req_val
@@ -134,13 +129,13 @@ class Downloader(object):
         if self._enable_trace_log:
             return self._send_log, self._recv_log
 
-    def _get_block_number(self, range_header):
+    def _get_block_id(self, range_header):
         tmp = range_header.split(' ')
         tmp = tmp[1].split('/')
         tmp = tmp[0].split('-')
-        block_number = int(tmp[0]) // self._split_size
+        block_idber = int(tmp[0]) // self._split_size
 
-        return block_number
+        return block_idber
 
     def _get_request_pos(self, conn_id):
         if self._delay_req_algo is DelayRequestAlgorithm.NORMAL:
@@ -191,9 +186,9 @@ class Downloader(object):
         try:
             pos = int((1 / ratio) - 1)
         except ZeroDivisionError:
-            pos = self._num_of_req - self._read_index
+            pos = self._num_req - self._read_index
 
-        pos = min(self._num_of_req - self._read_index, pos)
+        pos = min(self._num_req - self._read_index, pos)
 
         return pos
 
@@ -222,16 +217,16 @@ class Downloader(object):
         conn = self._conns[conn_id]
         url = self._urls[conn_id]
 
-        if self._enable_dup_req and self._should_send_dup_req() \
-                and self._is_conn_perf_highest(conn_id) and self._buf[self._read_index] is None:
+        if self._enable_dup_req and self._should_send_dup_req() and self._is_conn_perf_highest(conn_id) \
+                and self._buf[self._read_index] is None and self._sent_block_param[self._read_index] is not None:
 
             param, bad_conn_id = self._sent_block_param[self._read_index]
 
             if conn_id not in self._bad_conn_ids:
                 self._bad_conn_ids.append(conn_id)
 
-            self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_num={}, invalid_block_count={}'
-                               .format(conn_id, bad_conn_id, param['block_num'], self._invalid_block_count))
+            self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_id={}, invalid_block_count={}'
+                               .format(conn_id, bad_conn_id, param.block_id, self._invalid_block_count))
 
         else:
             try:
@@ -241,14 +236,14 @@ class Downloader(object):
                 raise
 
             self._previous_param[conn_id] = param
-            self._sent_block_param[param['block_num']] = (param, conn_id)
+            self._sent_block_param[param.block_id] = (param, conn_id)
 
-        conn.request('GET', url.path, headers=param['headers'])
-        self._logger.debug('Send request: conn_id={}, block_num={}, time={}, remain={}'
-                           .format(conn_id, param['block_num'], self._current_time(), len(self._params)))
+        conn.request('GET', url.path, headers=param.headers)
+        self._logger.debug('Send request: conn_id={}, block_id={}, time={}, remain={}'
+                           .format(conn_id, param.block_id, self._current_time(), len(self._params)))
 
         if self._enable_trace_log:
-            self._send_log.append((self._current_time(), param['block_num']))
+            self._send_log.append((self._current_time(), param.block_id))
 
     def _recv_resp(self, conn_id):
         conn = self._conns[conn_id]
@@ -259,17 +254,17 @@ class Downloader(object):
                 self._bad_conn_ids.append(conn_id)
             raise SphttpConnectionError
 
-        block_num = self._get_block_number(resp.headers[b'Content-Range'][0].decode())
+        block_id = self._get_block_id(resp.headers[b'Content-Range'][0].decode())
 
         body = resp.read()
-        if self._buf[block_num] is None:
-            self._buf[block_num] = body
+        if self._buf[block_id] is None:
+            self._buf[block_id] = body
             self._event.set()
-            self._logger.debug('Get chunk: conn_id={}, block_num={}, time={}, protocol={}'
-                               .format(conn_id, block_num, self._current_time(), resp.version.value))
+            self._logger.debug('Get chunk: conn_id={}, block_id={}, time={}, protocol={}'
+                               .format(conn_id, block_id, self._current_time(), resp.version.value))
 
             if self._enable_trace_log:
-                self._recv_log.append((self._current_time(), block_num))
+                self._recv_log.append((self._current_time(), block_id))
 
             self._host_usage_count[conn_id] += 1
             self._receive_count += 1
@@ -297,9 +292,10 @@ class Downloader(object):
             except SphttpConnectionError:
                 self._logger.debug('Connection abort: conn_id={}, url={}'.format(conn_id, self._urls[conn_id]))
                 self._host_usage_count[conn_id] = 0
+                self._bad_conn_ids.append(conn_id)
 
-                failed_block_num = self._previous_param[conn_id]['block_num']
-                if self._buf[failed_block_num] is None:
+                failed_block_id = self._previous_param[conn_id].block_id
+                if self._buf[failed_block_id] is None:
                     self._params.appendleft(self._previous_param[conn_id])
 
                 break
@@ -349,7 +345,7 @@ class Downloader(object):
             return False
 
     def _is_completed(self):
-        if self._read_index == self._num_of_req:
+        if self._read_index == self._num_req:
             return True
         else:
             return False
