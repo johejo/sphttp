@@ -13,28 +13,24 @@ from .structures import AnyPoppableDeque, RangeRequestParam
 local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
 
-DEFAULT_SPLIT_SIZE = 10 ** 6
-DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD = 20
-DEFAULT_INIT_DELAY_COEF = 1
-
 
 class Downloader(object):
     def __init__(self,
                  urls,
                  *,
-                 split_size=DEFAULT_SPLIT_SIZE,
+                 split_size=10**6,
                  enable_trace_log=False,
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
                  enable_dup_req=False,
                  static_delay_req_val=None,
-                 invalid_block_count_threshold=DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD,
-                 init_delay_coef=DEFAULT_INIT_DELAY_COEF,
+                 invalid_block_count_threshold=1,
+                 init_delay_coef=1,
                  logger=local_logger):
 
         self._split_size = abs(split_size)
         self._verify = verify
-        self._invalid_block_count_threshold = abs(invalid_block_count_threshold)
+        self._invalid_block_count_threshold = max(len(urls), invalid_block_count_threshold)
         self._delay_req_algo = delay_req_algo
         self._enable_dup_req = enable_dup_req
         self._logger = logger
@@ -221,7 +217,7 @@ class Downloader(object):
 
             param, bad_conn_id = self._sent_block_param[self._read_index]
 
-            self._bad_conn_ids.add(conn_id)
+            self._bad_conn_ids.add(bad_conn_id)
 
             self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_id={}, invalid_block_count={}'
                                .format(conn_id, bad_conn_id, param.block_id, self._invalid_block_count))
@@ -259,6 +255,8 @@ class Downloader(object):
             raise SphttpConnectionError
 
         block_id = get_block_id(resp.headers[b'Content-Range'][0].decode())
+        self._logger.debug('Receive response: conn_id={}, block_id={}, time={}, protocol={}'
+                           .format(conn_id, block_id, self._current_time(), resp.version.value))
 
         body = resp.read()
         if self._buf[block_id] is None:
@@ -273,12 +271,12 @@ class Downloader(object):
             self._host_usage_count[conn_id] += 1
             self._receive_count += 1
 
-            c = 0
-            for buf in self._buf:
-                if buf is not None and buf is not True:
-                    c += 1
-
-            self._invalid_block_count = c
+            # c = 0
+            # for buf in self._buf:
+            #     if buf is not None and buf is not True:
+            #         c += 1
+            #
+            # self._invalid_block_count = c
 
     def _download(self, conn_id):
 
@@ -296,7 +294,6 @@ class Downloader(object):
             except SphttpConnectionError:
                 self._logger.debug('Connection abort: conn_id={}, url={}'.format(conn_id, self._urls[conn_id]))
                 self._host_usage_count[conn_id] = 0
-                self._bad_conn_ids.add(conn_id)
                 failed_block_id = self._previous_param[conn_id].block_id
                 if self._buf[failed_block_id] is None:
                     self._params.appendleft(self._previous_param[conn_id])
@@ -323,13 +320,14 @@ class Downloader(object):
         length = len(b)
 
         if length == 0:
+            self._invalid_block_count += 1
             self._event.clear()
             self._event.wait()
             return self._concat_buf()
 
+        self._invalid_block_count = 0
         self._logger.debug('Return: bytes={}, num={}, read_index={}'
                            .format(length, length // self._split_size, self._read_index))
-
         return b
 
     def _current_time(self):
