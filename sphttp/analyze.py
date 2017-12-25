@@ -21,39 +21,39 @@ def separate_log(log):
     return time_stamps, block_numbers
 
 
-def analyze_receive_log(recv_log):
-    _, block_log = separate_log(recv_log)
-
-    stock = []
-    stock_count = []
-    return_count = []
-    n = 0
-
-    for o in block_log:
-        if n == o:
-            rn = 1
-            n += 1
-            si = 0
-            stock.sort()
-            while si < len(stock):
-                s = stock[si]
-                if n == s:
-                    n += 1
-                    rn += 1
-                    stock.pop(0)
-                else:
-                    si += 1
-
-        else:
-            rn = 0
-            stock.append(o)
-
-        stock_count.append(len(stock))
-        return_count.append(rn)
-
-    rcmean, rcstdev, scmean, scstdev = mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
-
-    return rcmean, rcstdev, scmean, scstdev
+# def analyze_receive_log(recv_log):
+#     _, block_log = separate_log(recv_log)
+#
+#     stock = []
+#     stock_count = []
+#     return_count = []
+#     n = 0
+#
+#     for o in block_log:
+#         if n == o:
+#             rn = 1
+#             n += 1
+#             si = 0
+#             stock.sort()
+#             while si < len(stock):
+#                 s = stock[si]
+#                 if n == s:
+#                     n += 1
+#                     rn += 1
+#                     stock.pop(0)
+#                 else:
+#                     si += 1
+#
+#         else:
+#             rn = 0
+#             stock.append(o)
+#
+#         stock_count.append(len(stock))
+#         return_count.append(rn)
+#
+#     rcmean, rcstdev, scmean, scstdev = mean(return_count), stdev(return_count), mean(stock_count), stdev(stock_count)
+#
+#     return rcmean, rcstdev, scmean, scstdev
 
 
 def calc_num_staying_blocks(recv_log):
