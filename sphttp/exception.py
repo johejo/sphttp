@@ -40,3 +40,7 @@ class ParameterPositionError(SphttpException):
 
 class SphttpConnectionError(SphttpException):
     pass
+
+
+class DuplicateStartError(SphttpException, RuntimeError):
+    pass

@@ -25,8 +25,8 @@ class Downloader(object):
                  split_size=DEFAULT_SPLIT_SIZE,
                  enable_trace_log=False,
                  verify=True,
-                 delay_req_algo=DelayRequestAlgorithm.DIFFERENCES,
-                 enable_dup_req=True,
+                 delay_req_algo=DelayRequestAlgorithm.DIFF,
+                 enable_dup_req=False,
                  static_delay_req_val=None,
                  invalid_block_count_threshold=DEFAULT_INVALID_BLOCK_COUNT_THRESHOLD,
                  init_delay_coef=DEFAULT_INIT_DELAY_COEF,
@@ -69,7 +69,7 @@ class Downloader(object):
 
         if reminder:
             self._params.append(RangeRequestParam(self._num_req, {'Range': 'bytes={0}-{1}'
-                                                  .format(begin, begin + self._split_size - 1)}))
+                                                  .format(begin, begin + reminder - 1)}))
             self._num_req += 1
 
         num_conns = len(self._conns)
@@ -82,7 +82,7 @@ class Downloader(object):
         self._initial = [True] * num_conns
         self._invalid_block_count = 0
         self._sent_block_param = [None] * self._num_req
-        self._bad_conn_ids = []
+        self._bad_conn_ids = set()
 
         self._receive_count = 0
         self._host_usage_count = [0] * num_conns
@@ -129,110 +129,108 @@ class Downloader(object):
         if self._enable_trace_log:
             return self._send_log, self._recv_log
 
-    def _get_block_id(self, range_header):
-        tmp = range_header.split(' ')
-        tmp = tmp[1].split('/')
-        tmp = tmp[0].split('-')
-        block_idber = int(tmp[0]) // self._split_size
-
-        return block_idber
-
-    def _get_request_pos(self, conn_id):
-        if self._delay_req_algo is DelayRequestAlgorithm.NORMAL:
-            return 0
-        elif self._delay_req_algo is DelayRequestAlgorithm.DIFFERENCES:
-            return self._measure_diff(conn_id)
-        elif self._delay_req_algo is DelayRequestAlgorithm.INVERSE:
-            return self._calc_inverse(conn_id)
-        elif self._delay_req_algo is DelayRequestAlgorithm.STATIC:
-            return self._static_diff(conn_id)
-        else:
-            raise DelayRequestAlgorithmError
-
-    def _static_diff(self, conn_id):
-        try:
-            diff = self._static_delay_req_val[conn_id]
-        except KeyError:
-            diff = 0
-
-        return diff
-
-    def _measure_diff(self, conn_id):
-        previous = self._previous_receive_count[conn_id]
-        current = self._receive_count
-        diff = current - previous
-
-        self._previous_receive_count[conn_id] = self._receive_count
-
-        if self._initial[conn_id]:
-            url = self._urls[conn_id]
-            diff = self._init_delay[url]
-            self._initial[conn_id] = False
-
-        elif self._host_usage_count[conn_id] == max(self._host_usage_count):
-                diff = 0
-
-        self._logger.debug('Diff: conn_id={}, diff={}'.format(conn_id, diff))
-        pos = max(0, diff)
-
-        return pos
-
-    def _calc_inverse(self, conn_id):
-        try:
-            ratio = self._host_usage_count[conn_id] / max(self._host_usage_count)
-        except ZeroDivisionError:
-            ratio = 1
-
-        try:
-            pos = int((1 / ratio) - 1)
-        except ZeroDivisionError:
-            pos = self._num_req - self._read_index
-
-        pos = min(self._num_req - self._read_index, pos)
-
-        return pos
-
-    def _get_param(self, conn_id):
-        pos = self._get_request_pos(conn_id)
-        remain = len(self._params)
-
-        if remain == 1:
-            pos = 0
-        elif pos * 0.9 > remain:
-            raise ParameterPositionError
-        else:
-            pos = min(pos, remain - 1)
-
-        while True:
-            try:
-                param = self._params.pop_at_any_pos(pos)
-            except IndexError:
-                pos -= 1
-            else:
-                break
-
-        return param
-
     def _send_req(self, conn_id):
+
+        def _get_param():
+
+            def _get_request_pos():
+                if self._delay_req_algo is DelayRequestAlgorithm.NORMAL:
+                    return 0
+                elif self._delay_req_algo is DelayRequestAlgorithm.DIFF:
+                    return _measure_diff()
+                elif self._delay_req_algo is DelayRequestAlgorithm.INV:
+                    return _calc_inverse()
+                elif self._delay_req_algo is DelayRequestAlgorithm.STATIC:
+                    return _static_diff()
+                else:
+                    raise DelayRequestAlgorithmError
+
+            def _static_diff():
+                try:
+                    diff = self._static_delay_req_val[conn_id]
+                except KeyError:
+                    diff = 0
+
+                return diff
+
+            def _measure_diff():
+                diff = self._receive_count - self._previous_receive_count[conn_id]
+
+                self._previous_receive_count[conn_id] = self._receive_count
+
+                if self._initial[conn_id]:
+                    diff = self._init_delay[url]
+                    self._initial[conn_id] = False
+
+                elif self._host_usage_count[conn_id] == max(self._host_usage_count):
+                    diff = 0
+
+                self._logger.debug('Diff: conn_id={}, diff={}'.format(conn_id, diff))
+                return max(0, diff)
+
+            def _calc_inverse():
+                try:
+                    ratio = self._host_usage_count[conn_id] / max(self._host_usage_count)
+                except ZeroDivisionError:
+                    ratio = 1
+
+                try:
+                    p = int((1 / ratio) - 1)
+                except ZeroDivisionError:
+                    p = self._num_req - self._read_index
+
+                return min(self._num_req - self._read_index, p)
+
+            pos = _get_request_pos()
+            remain = len(self._params)
+
+            if remain == 1:
+                pos = 0
+            elif pos * 0.9 > remain:
+                raise ParameterPositionError
+            else:
+                pos = min(pos, remain - 1)
+
+            while True:
+                try:
+                    parameter = self._params.pop_at_any_pos(pos)
+                except IndexError:
+                    pos -= 1
+                else:
+                    break
+
+            return parameter
+
+        def _should_send_dup_req():
+            if self._invalid_block_count > self._invalid_block_count_threshold:
+                return True
+            else:
+                return False
+
+        def _is_conn_perf_highest():
+            if conn_id == self._host_usage_count.index(max(self._host_usage_count)):
+                return True
+            else:
+                return False
+
         conn = self._conns[conn_id]
         url = self._urls[conn_id]
 
-        if self._enable_dup_req and self._should_send_dup_req() and self._is_conn_perf_highest(conn_id) \
+        if self._enable_dup_req and _should_send_dup_req() and _is_conn_perf_highest() \
                 and self._buf[self._read_index] is None and self._sent_block_param[self._read_index] is not None:
 
             param, bad_conn_id = self._sent_block_param[self._read_index]
 
-            if conn_id not in self._bad_conn_ids:
-                self._bad_conn_ids.append(conn_id)
+            self._bad_conn_ids.add(conn_id)
 
             self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_id={}, invalid_block_count={}'
                                .format(conn_id, bad_conn_id, param.block_id, self._invalid_block_count))
 
         else:
             try:
-                param = self._get_param(conn_id)
+                param = _get_param()
             except ParameterPositionError:
-                self._logger.debug('ParameterError')
+                self._logger.debug('ParameterError: conn_id={}'.format(conn_id))
                 raise
 
             self._previous_param[conn_id] = param
@@ -246,15 +244,21 @@ class Downloader(object):
             self._send_log.append((self._current_time(), param.block_id))
 
     def _recv_resp(self, conn_id):
+
+        def get_block_id(range_header):
+            tmp = range_header.split(' ')
+            tmp = tmp[1].split('/')
+            tmp = tmp[0].split('-')
+            return int(tmp[0]) // self._split_size
+
         conn = self._conns[conn_id]
         try:
             resp = conn.get_response()
         except (ConnectionResetError, ConnectionAbortedError):
-            if conn_id not in self._bad_conn_ids:
-                self._bad_conn_ids.append(conn_id)
+            self._bad_conn_ids.add(conn_id)
             raise SphttpConnectionError
 
-        block_id = self._get_block_id(resp.headers[b'Content-Range'][0].decode())
+        block_id = get_block_id(resp.headers[b'Content-Range'][0].decode())
 
         body = resp.read()
         if self._buf[block_id] is None:
@@ -292,8 +296,7 @@ class Downloader(object):
             except SphttpConnectionError:
                 self._logger.debug('Connection abort: conn_id={}, url={}'.format(conn_id, self._urls[conn_id]))
                 self._host_usage_count[conn_id] = 0
-                self._bad_conn_ids.append(conn_id)
-
+                self._bad_conn_ids.add(conn_id)
                 failed_block_id = self._previous_param[conn_id].block_id
                 if self._buf[failed_block_id] is None:
                     self._params.appendleft(self._previous_param[conn_id])
@@ -331,18 +334,6 @@ class Downloader(object):
 
     def _current_time(self):
         return time.monotonic() - self._begin_time
-
-    def _should_send_dup_req(self):
-        if self._invalid_block_count > self._invalid_block_count_threshold:
-            return True
-        else:
-            return False
-
-    def _is_conn_perf_highest(self, conn_id):
-        if conn_id == self._host_usage_count.index(max(self._host_usage_count)):
-            return True
-        else:
-            return False
 
     def _is_completed(self):
         if self._read_index == self._num_req:

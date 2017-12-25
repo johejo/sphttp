@@ -71,7 +71,7 @@ class SplitHTTP11Downloader(object):
         random.shuffle(self._host_id_queue.queue)
 
         self._delay_request_algorithm = delay_request_algorithm
-        if self._delay_request_algorithm is DelayRequestAlgorithm.DIFFERENCES:
+        if self._delay_request_algorithm is DelayRequestAlgorithm.DIFF:
             self._previous_counts = Counter()
 
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
@@ -136,11 +136,11 @@ class SplitHTTP11Downloader(object):
     def _get_delay_request_degree(self, host_id):
         if self._delay_request_algorithm is DelayRequestAlgorithm.NORMAL:
             return 0
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.DIFFERENCES:
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.DIFF:
             return self._estimate_differences(host_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.ORIGINAL:
             return self._original_func(host_id)
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE:
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.INV:
             return self._inverse_proportion_to_host_usage_count(host_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.CONVEX_DOWNWARD:
             return self._convex_downward_to_host_usage_count(host_id)

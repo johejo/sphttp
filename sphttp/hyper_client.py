@@ -25,7 +25,7 @@ class MultiHTTPDownloader(object):
                  sleep_sec=DEFAULT_SLEEP_SEC,
                  enable_trace_log=False,
                  verify=True,
-                 delay_request_algorithm=DelayRequestAlgorithm.DIFFERENCES,
+                 delay_request_algorithm=DelayRequestAlgorithm.DIFF,
                  multi_stream_setting=None,
                  multi_connection_setting=None,
                  static_delay_request_degree=None,
@@ -154,9 +154,9 @@ class MultiHTTPDownloader(object):
     def _get_request_pos(self, conn_id):
         if self._delay_request_algorithm is DelayRequestAlgorithm.NORMAL:
             return 0
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.DIFFERENCES:
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.DIFF:
             return self._measure_diff(conn_id)
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE:
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.INV:
             return self._calc_inverse(conn_id)
         elif self._delay_request_algorithm is DelayRequestAlgorithm.STATIC:
             return self._static_diff(conn_id)

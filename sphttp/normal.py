@@ -120,9 +120,9 @@ class MultiHTTPDownloader(object):
     def _get_request_pos(self, url_id):
         if self._delay_request_algorithm is DelayRequestAlgorithm.NORMAL:
             return 0
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.DIFFERENCES:
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.DIFF:
             return self._measure_diff(url_id)
-        elif self._delay_request_algorithm is DelayRequestAlgorithm.INVERSE:
+        elif self._delay_request_algorithm is DelayRequestAlgorithm.INV:
             return self._calc_inverse(url_id)
 
     def _measure_diff(self, url_id):

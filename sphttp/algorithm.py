@@ -3,6 +3,6 @@ from enum import Enum, auto
 
 class DelayRequestAlgorithm(Enum):
     NORMAL = auto()
-    DIFFERENCES = auto()
-    INVERSE = auto()
+    DIFF = auto()
+    INV = auto()
     STATIC = auto()
