@@ -62,12 +62,12 @@ def calc_initial_buffering_time(recv_log):
 
 
 def calc_ave_delay_time(recv_log, split_size):
-    t, bn = separate_log(recv_log)
-    finish_time = max(t)
+    t_log, bn_log = separate_log(recv_log)
+    finish_time = max(t_log)
     ave_arrival_desired_interval = finish_time / split_size
 
     d = []
-    for i, (ti, bi) in enumerate(recv_log):
+    for i, ti in t_log:
         if ti > ave_arrival_desired_interval * i:
             d.append(ti - ave_arrival_desired_interval * i)
         else:
