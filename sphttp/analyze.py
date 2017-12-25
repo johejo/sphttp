@@ -43,10 +43,10 @@ def calc_num_staying_blocks(recv_log):
 
         nsbib.append(len(buf))
 
-    nsb_mean = mean(nsbib)
-    nsb_stdev = stdev(nsbib)
+    nsbib_mean = mean(nsbib)
+    nsbib_stdev = stdev(nsbib)
 
-    return nsb_mean, nsb_stdev
+    return nsbib_mean, nsbib_stdev
 
 
 def calc_num_simultaneous_return_block(recv_log):
