@@ -88,9 +88,8 @@ def calc_initial_buffering_time(recv_log):
     t_log, block_log = separate_log(recv_log)
     finish_time = max(t_log)
     ave_interval = finish_time / len(recv_log)
-    sorted_by_block_id = sorted(recv_log, key=lambda x: x[1])
 
-    initial_buffering = max([ti - (i * ave_interval) for i, (ti, _) in enumerate(sorted_by_block_id)])
+    initial_buffering = max([ti - (i * ave_interval) for i, (ti, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
 
     return initial_buffering
 
@@ -101,8 +100,7 @@ def calc_ave_delay_time(recv_log):
     ave_arrival_desired_interval = finish_time / len(recv_log)
 
     d = []
-    sorted_by_block_id = sorted(recv_log, key=lambda x: x[1])
-    for i, (ti, _) in enumerate(sorted_by_block_id):
+    for i, (ti, _) in enumerate(sorted(recv_log, key=lambda x: x[1])):
         if ti > ave_arrival_desired_interval * i:
             d.append(ti - ave_arrival_desired_interval * i)
         else:
