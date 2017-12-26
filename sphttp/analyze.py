@@ -111,6 +111,13 @@ def calc_ave_delay_time(recv_log):
     return ave_delay_time
 
 
+def get_throughput(recv_log, filesize):
+    t_log, _ = separate_log(recv_log)
+    end = max(t_log)
+    thp = filesize * 8 / end / 10 ** 6
+    return thp
+
+
 # Test
 def __test():
     recv_log = [(1, 1), (2, 0), (3, 2), (4, 5), (5, 7), (6, 8), (7, 3), (8, 6), (9, 4)]
