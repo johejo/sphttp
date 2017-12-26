@@ -86,23 +86,23 @@ def calc_good_put(recv_log):
 
 def calc_initial_buffering_time(recv_log):
     t_log, block_log = separate_log(recv_log)
-    finish_time, last_block_num = max(t_log), max(block_log)
-    good_put = finish_time / last_block_num
+    finish_time = max(t_log)
+    ave_interval = finish_time / len(recv_log)
+    sorted_by_block_id = sorted(recv_log, key=lambda x: x[1])
 
-    finish_index = t_log.index(finish_time)
-
-    initial_buffering = finish_time - (block_log[finish_index] / good_put)
+    initial_buffering = max([ti - (i * ave_interval) for i, (ti, _) in enumerate(sorted_by_block_id)])
 
     return initial_buffering
 
 
 def calc_ave_delay_time(recv_log):
-    t_log, _ = separate_log(recv_log)
+    t_log, block_log = separate_log(recv_log)
     finish_time = max(t_log)
     ave_arrival_desired_interval = finish_time / len(recv_log)
 
     d = []
-    for i, ti in enumerate(t_log):
+    sorted_by_block_id = sorted(recv_log, key=lambda x: x[1])
+    for i, (ti, _) in enumerate(sorted_by_block_id):
         if ti > ave_arrival_desired_interval * i:
             d.append(ti - ave_arrival_desired_interval * i)
         else:
@@ -115,7 +115,7 @@ def calc_ave_delay_time(recv_log):
 
 # Test
 def __test():
-    recv_log = [(0, 1), (1, 0), (2, 2), (3, 5), (4, 7), (5, 8), (6, 3), (7, 6), (8, 4)]
+    recv_log = [(1, 1), (2, 0), (3, 2), (4, 5), (5, 7), (6, 8), (7, 3), (8, 6), (9, 4)]
     print(calc_num_staying_blocks(recv_log))
     print(calc_num_simultaneous_return_block(recv_log))
     print(calc_good_put(recv_log))
