@@ -9,6 +9,14 @@
 # recv_log = [(0, 0), (1, 2), (2, 1)]
 
 from statistics import mean, stdev
+import pickle
+
+
+def open_log(filename):
+    with open(filename, 'rb') as f:
+        send_log, recv_log = pickle.load(f)
+
+    return send_log, recv_log
 
 
 def separate_log(log):
