@@ -109,8 +109,7 @@ class Downloader(object):
                 thread.start()
 
     def close(self):
-        # self._event.set()
-        pass
+        return
 
     def generator(self):
         if self._is_started is False:
@@ -328,7 +327,7 @@ class Downloader(object):
         self._invalid_block_count = 0
         self._logger.debug('Return: bytes={}, num={}, read_index={}'
                            .format(length, length // self._split_size, self._read_index))
-        return b
+        return bytes(b)
 
     def _current_time(self):
         return time.monotonic() - self._begin_time

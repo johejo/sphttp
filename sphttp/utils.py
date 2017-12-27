@@ -41,7 +41,8 @@ def async_get_length(urls):
                 length.append(int(resp.headers['Content-Length']))
                 delays[url] = time.monotonic() - begin
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     loop.run_until_complete(asyncio.wait([init_head_request(url) for url in urls]))
 
     return length, delays
