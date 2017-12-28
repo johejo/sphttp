@@ -10,7 +10,7 @@ import aiohttp
 
 from .exception import StatusCodeError, NoContentLength, NoAcceptRanges, SchemeError
 
-REDIRECT_STATUSES = [301, 302, 303, 307, 308]
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
 
 class SphttpFlowControlManager(BaseFlowControlManager):
@@ -18,7 +18,7 @@ class SphttpFlowControlManager(BaseFlowControlManager):
     def increase_window_size(self, frame_size):
         increase = self.window_size * 10
         future_window_size = self.window_size - frame_size + increase
-        if future_window_size >= 2147483647:
+        if future_window_size >= 2147483647:  # 2^31 - 1
             return 0
 
         return increase
@@ -27,6 +27,8 @@ class SphttpFlowControlManager(BaseFlowControlManager):
         return self.initial_window_size - self.window_size
 
 
+# first head request to get content length
+# and measure delay of head request
 def async_get_length(urls):
     length = []
     delays = {}
@@ -35,10 +37,17 @@ def async_get_length(urls):
         async with aiohttp.ClientSession() as sess:
             begin = time.monotonic()
             async with sess.head(url) as resp:
+
+                # Redirects are not supported
                 if resp.status != 200:
                     message = 'status={}'.format(resp.status)
                     raise StatusCodeError(message)
-                length.append(int(resp.headers['Content-Length']))
+                try:
+                    length.append(int(resp.headers['Content-Length']))
+                except KeyError:
+                    message = 'Host does not support Content-Length header.'
+                    raise NoContentLength(message)
+
                 delays[url] = time.monotonic() - begin
 
     loop = asyncio.new_event_loop()
@@ -47,6 +56,17 @@ def async_get_length(urls):
 
     return length, delays
 
+
+# Check if the contents of sequence are all the same
+def match_all(es):
+    """
+    :param es: list
+    :return: bool
+    """
+    return all([e == es[0] for e in es[1:]]) if es else False
+
+
+# The parts below this are not maintained.
 
 def get_length(target_url, *, verify=True):
     resp = requests.head(url=target_url, verify=verify)
@@ -84,14 +104,6 @@ def get_port(url):
         message = 'Scheme is not set.'
         raise SchemeError(message)
     return port
-
-
-def match_all(es):
-    """
-    :param es: list
-    :return: bool
-    """
-    return all([e == es[0] for e in es[1:]]) if es else False
 
 
 def get_index(range_header, split_size):
