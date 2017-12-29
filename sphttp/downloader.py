@@ -27,7 +27,8 @@ class Downloader(object):
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  invalid_block_count_threshold=10,
-                 init_delay_coef=1,
+                 similar_conn_raio=0.9,
+                 init_delay_coef=10,
                  logger=local_logger):
 
         self._split_size = abs(split_size)
@@ -37,7 +38,15 @@ class Downloader(object):
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
         self._close_bad_conn = close_bad_conn
+
+        if 0 < similar_conn_raio <= 1:
+            self._similar_conn_ratio = similar_conn_raio
+        else:
+            self._similar_conn_ratio = 0.9
+
         self._logger = logger
+
+        init_delay_coef = max(1, init_delay_coef)
 
         length, raw_delays = async_get_length(urls)
 
@@ -153,7 +162,9 @@ class Downloader(object):
                 return diff
 
             def _measure_diff():
-                diff = self._receive_count - self._previous_receive_count[conn_id] - len(self._urls) + len(self._bad_conn_ids)
+
+                diff = self._receive_count - self._previous_receive_count[conn_id]\
+                       - len(self._urls) + len(self._bad_conn_ids)
 
                 self._previous_receive_count[conn_id] = self._receive_count
 

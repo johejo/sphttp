@@ -13,6 +13,7 @@ from .exception import StatusCodeError, NoContentLength, NoAcceptRanges, SchemeE
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
 
+# hyper's FlowControlManager does not perform very well in a high-throughput environment
 class SphttpFlowControlManager(BaseFlowControlManager):
 
     def increase_window_size(self, frame_size):
