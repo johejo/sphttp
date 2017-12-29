@@ -5,7 +5,7 @@ from logging import getLogger, NullHandler
 from hyper import HTTPConnection
 from yarl import URL
 
-from .algorithm import DelayRequestAlgorithm
+from .algorithm import DelayRequestAlgorithm, DuplicateRequestAlgorithm
 from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError
 from .utils import match_all, SphttpFlowControlManager, async_get_length
 from .structures import AnyPoppableDeque, RangeRequestParam
@@ -23,16 +23,20 @@ class Downloader(object):
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
                  enable_dup_req=False,
-                 static_delay_req_val=None,
-                 invalid_block_count_threshold=1,
+                 dup_req_algo=DuplicateRequestAlgorithm.IBRC,
+                 close_bad_conn=False,
+                 static_delay_req_vals=None,
+                 invalid_block_count_threshold=10,
                  init_delay_coef=1,
                  logger=local_logger):
 
         self._split_size = abs(split_size)
         self._verify = verify
-        self._invalid_block_count_threshold = max(len(urls), invalid_block_count_threshold)
+        self._invalid_block_count_threshold = max(10, invalid_block_count_threshold)
         self._delay_req_algo = delay_req_algo
         self._enable_dup_req = enable_dup_req
+        self._dup_req_algo = dup_req_algo
+        self._close_bad_conn = close_bad_conn
         self._logger = logger
 
         length, raw_delays = async_get_length(urls)
@@ -85,8 +89,8 @@ class Downloader(object):
         self._previous_receive_count = [0] * num_conns
         self._previous_param = [RangeRequestParam() for _ in self._conns]
 
-        if self._delay_req_algo is DelayRequestAlgorithm.STATIC and static_delay_req_val:
-            self._static_delay_req_val = static_delay_req_val
+        if self._delay_req_algo is DelayRequestAlgorithm.STATIC and static_delay_req_vals:
+            self._static_delay_req_val = static_delay_req_vals
 
         self._enable_trace_log = enable_trace_log
         self._begin_time = None
@@ -149,16 +153,13 @@ class Downloader(object):
                 return diff
 
             def _measure_diff():
-                diff = self._receive_count - self._previous_receive_count[conn_id]
+                diff = self._receive_count - self._previous_receive_count[conn_id] - len(self._urls) + len(self._bad_conn_ids)
 
                 self._previous_receive_count[conn_id] = self._receive_count
 
                 if self._initial[conn_id]:
                     diff = self._init_delay[url]
                     self._initial[conn_id] = False
-
-                elif self._host_usage_count[conn_id] == max(self._host_usage_count):
-                    diff = 0
 
                 self._logger.debug('Diff: conn_id={}, diff={}'.format(conn_id, diff))
                 return max(0, diff)
@@ -214,9 +215,10 @@ class Downloader(object):
         if self._enable_dup_req and _should_send_dup_req() and _is_conn_perf_highest() \
                 and self._buf[self._read_index] is None and self._sent_block_param[self._read_index] is not None:
 
-            param, bad_conn_id = self._sent_block_param[self._read_index]
+            bad_conn_id, param = self._sent_block_param[self._read_index]
 
-            self._bad_conn_ids.add(bad_conn_id)
+            if self._close_bad_conn:
+                self._bad_conn_ids.add(bad_conn_id)
 
             self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_id={}, invalid_block_count={}'
                                .format(conn_id, bad_conn_id, param.block_id, self._invalid_block_count))
@@ -229,7 +231,7 @@ class Downloader(object):
                 raise
 
             self._previous_param[conn_id] = param
-            self._sent_block_param[param.block_id] = (param, conn_id)
+            self._sent_block_param[param.block_id] = (conn_id, param)
 
         conn.request('GET', url.path, headers=param.headers)
         self._logger.debug('Send request: conn_id={}, block_id={}, time={}, remain={}'
@@ -270,13 +272,6 @@ class Downloader(object):
             self._host_usage_count[conn_id] += 1
             self._receive_count += 1
 
-            # c = 0
-            # for buf in self._buf:
-            #     if buf is not None and buf is not True:
-            #         c += 1
-            #
-            # self._invalid_block_count = c
-
     def _download(self, conn_id):
 
         while not self._is_completed():
@@ -305,28 +300,41 @@ class Downloader(object):
     def _concat_buf(self):
         b = bytearray()
         i = self._read_index
-        length = len(self._buf)
+        buf_len = len(self._buf)
+        n = 0
 
-        while i < length:
+        while i < buf_len:
             if self._buf[i] is None:
                 break
             else:
                 b += self._buf[i]
                 self._buf[i] = True
+                n += 1
             i += 1
 
         self._read_index = i
-        length = len(b)
 
-        if length == 0:
-            self._invalid_block_count += 1
+        if self._dup_req_algo is DuplicateRequestAlgorithm.NIBIB:
+            c = 0
+            for buf in self._buf:
+                if type(buf) is bytes:
+                    c += 1
+            self._invalid_block_count = c
+
+        b_len = len(b)
+
+        if b_len == 0:
+            if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
+                self._invalid_block_count += 1
             self._event.clear()
             self._event.wait()
             return self._concat_buf()
 
-        self._invalid_block_count = 0
+        if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
+            self._invalid_block_count = 0
+
         self._logger.debug('Return: bytes={}, num={}, read_index={}'
-                           .format(length, length // self._split_size, self._read_index))
+                           .format(b_len, n, self._read_index))
         return bytes(b)
 
     def _current_time(self):

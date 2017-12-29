@@ -6,3 +6,8 @@ class DelayRequestAlgorithm(Enum):
     DIFF = auto()
     INV = auto()
     STATIC = auto()
+
+
+class DuplicateRequestAlgorithm(Enum):
+    IBRC = auto()
+    NIBIB = auto()
