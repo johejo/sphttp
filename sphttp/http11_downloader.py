@@ -2,13 +2,12 @@ from threading import Thread, Event
 import time
 from logging import getLogger, NullHandler
 
-from hyper import HTTPConnection
+import requests
+from requests.exceptions import ConnectionError, Timeout, RequestException
 from yarl import URL
 
 from .algorithm import DelayRequestAlgorithm, DuplicateRequestAlgorithm
-from .exception import (
-    FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError, StatusCodeError,
-)
+from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError
 from .utils import match_all, SphttpFlowControlManager, async_get_length
 from .structures import AnyPoppableDeque, RangeRequestParam
 
@@ -16,11 +15,11 @@ local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
 
 
-class Downloader(object):
+class HTTP11Downloader(object):
     def __init__(self,
                  urls,
                  *,
-                 split_size=10**6,
+                 split_size=10 ** 6,
                  enable_trace_log=False,
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
@@ -39,7 +38,7 @@ class Downloader(object):
         self._delay_req_algo = delay_req_algo
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
-        self._close_bad_conn = close_bad_conn
+        self._close_bad_sess = close_bad_conn
 
         if 0 < similar_conn_raio <= 1:
             self._similar_conn_ratio = similar_conn_raio
@@ -61,9 +60,11 @@ class Downloader(object):
         self._urls = [URL(url) for url in urls]
 
         # create hyper connection
-        self._conns = [HTTPConnection(host='{}:{}'.format(url.host, url.port),
-                                      window_manager=SphttpFlowControlManager,
-                                      verify=self._verify) for url in self._urls]
+        # self._sessions = [HTTPConnection(host='{}:{}'.format(url.host, url.port),
+        #                               window_manager=SphttpFlowControlManager,
+        #                               verify=self._verify) for url in self._urls]
+        
+        self._sessions = [requests.Session() for _ in self._urls]
 
         self._num_req = self.length // self._split_size
         reminder = self.length % self._split_size
@@ -85,22 +86,22 @@ class Downloader(object):
                                                   .format(begin, begin + reminder - 1)}))
             self._num_req += 1
 
-        num_conns = len(self._conns)
+        num_sessions = len(self._sessions)
 
-        self._threads = [Thread(target=self._download, args=(conn_id,), name=str(conn_id))
-                         for conn_id in range(num_conns)]
+        self._threads = [Thread(target=self._download, args=(sess_id,), name=str(sess_id))
+                         for sess_id in range(num_sessions)]
         self._buf = [None] * self._num_req
         self._is_started = False
         self._read_index = 0
-        self._initial = [True] * num_conns
+        self._initial = [True] * num_sessions
         self._invalid_block_count = 0
         self._sent_block_param = [None] * self._num_req
-        self._bad_conn_ids = set()
+        self._bad_session_ids = set()
 
         self._receive_count = 0
-        self._host_usage_count = [0] * num_conns
-        self._previous_receive_count = [0] * num_conns
-        self._previous_param = [RangeRequestParam() for _ in self._conns]
+        self._host_usage_count = [0] * num_sessions
+        self._previous_receive_count = [0] * num_sessions
+        self._previous_param = [RangeRequestParam() for _ in self._sessions]
 
         if self._delay_req_algo is DelayRequestAlgorithm.STATIC and static_delay_req_vals:
             self._static_delay_req_val = static_delay_req_vals
@@ -141,7 +142,7 @@ class Downloader(object):
         if self._enable_trace_log:
             return self._send_log, self._recv_log
 
-    def _send_req(self, conn_id):
+    def _send_req(self, sess_id):
 
         def _get_param():
 
@@ -159,7 +160,7 @@ class Downloader(object):
 
             def _static_diff():
                 try:
-                    diff = self._static_delay_req_val[conn_id]
+                    diff = self._static_delay_req_val[sess_id]
                 except KeyError:
                     diff = 0
 
@@ -167,21 +168,21 @@ class Downloader(object):
 
             def _measure_diff():
 
-                diff = self._receive_count - self._previous_receive_count[conn_id]\
-                       - len(self._urls) + len(self._bad_conn_ids)
+                diff = self._receive_count - self._previous_receive_count[sess_id] \
+                       - len(self._urls) + len(self._bad_session_ids)
 
-                self._previous_receive_count[conn_id] = self._receive_count
+                self._previous_receive_count[sess_id] = self._receive_count
 
-                if self._initial[conn_id]:
+                if self._initial[sess_id]:
                     diff = self._init_delay[url]
-                    self._initial[conn_id] = False
+                    self._initial[sess_id] = False
 
-                self._logger.debug('Diff: conn_id={}, diff={}'.format(conn_id, diff))
+                self._logger.debug('Diff: sess_id={}, diff={}'.format(sess_id, diff))
                 return max(0, diff)
 
             def _calc_inverse():
                 try:
-                    ratio = self._host_usage_count[conn_id] / max(self._host_usage_count)
+                    ratio = self._host_usage_count[sess_id] / max(self._host_usage_count)
                 except ZeroDivisionError:
                     ratio = 1
 
@@ -218,103 +219,87 @@ class Downloader(object):
             else:
                 return False
 
-        def _is_conn_perf_highest():
-            if conn_id == self._host_usage_count.index(max(self._host_usage_count)):
+        def _is_sess_perf_highest():
+            if sess_id == self._host_usage_count.index(max(self._host_usage_count)):
                 return True
             else:
                 return False
 
-        conn = self._conns[conn_id]
-        url = self._urls[conn_id]
+        sess = self._sessions[sess_id]
+        url = self._urls[sess_id]
 
-        if self._enable_dup_req and _should_send_dup_req() and _is_conn_perf_highest() \
+        if self._enable_dup_req and _should_send_dup_req() and _is_sess_perf_highest() \
                 and self._buf[self._read_index] is None and self._sent_block_param[self._read_index] is not None:
 
-            bad_conn_id, param = self._sent_block_param[self._read_index]
+            bad_sess_id, param = self._sent_block_param[self._read_index]
 
-            if self._close_bad_conn:
-                self._bad_conn_ids.add(bad_conn_id)
+            if self._close_bad_sess:
+                self._bad_session_ids.add(bad_sess_id)
 
-            self._logger.debug('Duplicate request: conn_id={}, bad_conn_id={}, block_id={}, invalid_block_count={}'
-                               .format(conn_id, bad_conn_id, param.block_id, self._invalid_block_count))
+            self._logger.debug('Duplicate request: sess_id={}, bad_sess_id={}, block_id={}, invalid_block_count={}'
+                               .format(sess_id, bad_sess_id, param.block_id, self._invalid_block_count))
 
         else:
             try:
                 param = _get_param()
             except ParameterPositionError:
-                self._logger.debug('ParameterError: conn_id={}'.format(conn_id))
+                self._logger.debug('ParameterError: sess_id={}'.format(sess_id))
                 raise
 
-            self._previous_param[conn_id] = param
-            self._sent_block_param[param.block_id] = (conn_id, param)
+            self._previous_param[sess_id] = param
+            self._sent_block_param[param.block_id] = (sess_id, param)
 
-        conn.request('GET', url.path, headers=param.headers)
-        self._logger.debug('Send request: conn_id={}, block_id={}, time={}, remain={}'
-                           .format(conn_id, param.block_id, self._current_time(), len(self._params)))
-
-        if self._enable_trace_log:
-            self._send_log.append((self._current_time(), param.block_id))
-
-    def _recv_resp(self, conn_id):
-
-        def get_block_id(range_header):
-            tmp = range_header.split(' ')
-            tmp = tmp[1].split('/')
-            tmp = tmp[0].split('-')
-            return int(tmp[0]) // self._split_size
-
-        conn = self._conns[conn_id]
-        try:
-            resp = conn.get_response()
-        except (ConnectionResetError, ConnectionAbortedError):
-            self._bad_conn_ids.add(conn_id)
-            raise SphttpConnectionError
-
-        if resp.status != 206:
-            message = 'status_code: {}'.format(resp.status)
-            raise StatusCodeError(message)
-
-        block_id = get_block_id(resp.headers[b'Content-Range'][0].decode())
-        self._logger.debug('Receive response: conn_id={}, block_id={}, time={}, protocol={}'
-                           .format(conn_id, block_id, self._current_time(), resp.version.value))
-
-        body = resp.read()
-        if self._buf[block_id] is None:
-            self._buf[block_id] = body
-            self._event.set()
-            self._logger.debug('Get chunk: conn_id={}, block_id={}, time={}, protocol={}'
-                               .format(conn_id, block_id, self._current_time(), resp.version.value))
+        with sess.get(url.human_repr(), headers=param.headers, stream=True, timeout=2) as resp:
+            self._logger.debug('Send request: sess_id={}, block_id={}, time={}, remain={}'
+                               .format(sess_id, param.block_id, self._current_time(), len(self._params)))
 
             if self._enable_trace_log:
-                self._recv_log.append((self._current_time(), block_id))
+                self._send_log.append((self._current_time(), param.block_id))
 
-            self._host_usage_count[conn_id] += 1
-            self._receive_count += 1
+            def get_block_id(range_header):
+                tmp = range_header.split(' ')
+                tmp = tmp[1].split('/')
+                tmp = tmp[0].split('-')
+                return int(tmp[0]) // self._split_size
 
-    def _download(self, conn_id):
+            block_id = get_block_id(resp.headers['Content-Range'])
+            self._logger.debug('Receive response: sess_id={}, block_id={}, time={}'
+                               .format(sess_id, block_id, self._current_time()))
+
+            body = resp.content
+            if self._buf[block_id] is None:
+                self._buf[block_id] = body
+                self._event.set()
+                self._logger.debug('Get chunk: sess_id={}, block_id={}, time={}'
+                                   .format(sess_id, block_id, self._current_time()))
+
+                if self._enable_trace_log:
+                    self._recv_log.append((self._current_time(), block_id))
+
+                self._host_usage_count[sess_id] += 1
+                self._receive_count += 1
+
+    def _download(self, sess_id):
 
         while not self._is_completed():
-            if conn_id in self._bad_conn_ids or not len(self._params):
+            if sess_id in self._bad_session_ids or not len(self._params):
                 break
 
             try:
-                self._send_req(conn_id)
+                self._send_req(sess_id)
             except ParameterPositionError:
                 break
-
-            try:
-                self._recv_resp(conn_id)
-            except SphttpConnectionError:
-                self._logger.debug('Connection abort: conn_id={}, url={}'.format(conn_id, self._urls[conn_id]))
-                self._host_usage_count[conn_id] = 0
-                failed_block_id = self._previous_param[conn_id].block_id
+            except RequestException as e:
+                self._logger.debug('Connection abort: sess_id={}, url={}'.format(sess_id, self._urls[sess_id]))
+                self._host_usage_count[sess_id] = 0
+                failed_block_id = self._previous_param[sess_id].block_id
                 if self._buf[failed_block_id] is None:
-                    self._params.appendleft(self._previous_param[conn_id])
+                    self._params.appendleft(self._previous_param[sess_id])
 
                 break
 
-        self._conns[conn_id].close()
-        self._logger.debug('Finish: conn_id={}'.format(conn_id))
+        self._sessions[sess_id].close()
+        self._logger.debug('Finish: sess_id={}'.format(sess_id))
 
     def _concat_buf(self):
         b = bytearray()
