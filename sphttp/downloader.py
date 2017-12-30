@@ -159,7 +159,7 @@ class Downloader(object):
 
             def _static_diff():
                 try:
-                    diff = self._static_delay_req_val[conn_id]
+                    diff = self._static_delay_req_val[url.human_repr()]
                 except KeyError:
                     diff = 0
 
