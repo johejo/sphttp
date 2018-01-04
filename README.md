@@ -70,7 +70,7 @@ Don`t you think that playing a movie file as a network stream on VLC is fun!
 ## Delay Request Algorithm
 You can select an algorithm on how to send a range request to multiple hosts. 
 
-About algorithms it would be better to read my graduation thesis (Please wait for a while as it is being written as of December 2018)
+About algorithms it would be better to read my graduation thesis (Please wait for a while as it is being written as of January 2018)
 
 ### How to select
 Pass such parameters when generating Downloader object.
