@@ -6,7 +6,7 @@ While using split download using HTTP range-header, you can immediately use the 
 
 # Install
 ```bash
-$ pip install git+https://github.com/johejo/sphttp.git
+$ pip install -U git+https://github.com/johejo/sphttp.git
 $ pip install -U git+https://github.com/Lukasa/hyper.git
 ```
 
