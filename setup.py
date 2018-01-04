@@ -24,7 +24,6 @@ setup(
         'yarl>=0.14.2',
         'aiohttp>=2.3.6',
     ],
-
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
