@@ -253,7 +253,7 @@ class Downloader(object):
                            .format(conn_id, param.block_id, self._current_time(), len(self._params)))
 
         if self._enable_trace_log:
-            self._send_log.append((self._current_time(), param.block_id))
+            self._send_log.append((self._current_time(), param.block_id, self._urls[conn_id].human_repr()))
 
     def _recv_resp(self, conn_id):
 
@@ -286,7 +286,7 @@ class Downloader(object):
                                .format(conn_id, block_id, self._current_time(), resp.version.value))
 
             if self._enable_trace_log:
-                self._recv_log.append((self._current_time(), block_id))
+                self._recv_log.append((self._current_time(), block_id, self._urls[conn_id].human_repr()))
 
             self._host_usage_count[conn_id] += 1
             self._receive_count += 1
