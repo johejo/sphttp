@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 import asyncio
 import time
+from yarl import URL
 
 import requests
 from hyper import HTTP20Connection
@@ -49,7 +50,7 @@ def async_get_length(urls):
                     message = 'Host does not support Content-Length header.'
                     raise NoContentLength(message)
 
-                delays[url] = time.monotonic() - begin
+                delays[URL(url).host] = time.monotonic() - begin
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
