@@ -133,7 +133,7 @@ class Downloader(object):
 
     def get_trace_log(self):
         if self._enable_trace_log:
-            return self._send_log, self._recv_log, self._init_delay
+            return self._send_log, self._recv_log, self._raw_delays
 
     def _send_req(self, conn_id):
 
