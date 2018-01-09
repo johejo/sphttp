@@ -143,7 +143,9 @@ def get_throughput(recv_log, filesize):
 
 # Test
 def __test():
-    recv_log = [(1, 1), (2, 0), (3, 2), (4, 5), (5, 7), (6, 8), (7, 3), (8, 6), (9, 4)]
+    recv_log = [
+        (1, 1, 'hoge.com'), (2, 0, 'foo.com'), (3, 2, 'hoge.com'), (4, 5, 'hoge.com'), (5, 7, 'bar.com'),
+        (6, 8, 'hoge.com'), (7, 3, 'hoge.com'), (8, 6, 'hoge.com'), (9, 4, 'hoge.com')]
     print(calc_num_staying_blocks(recv_log))
     print(calc_num_simultaneous_return_block(recv_log))
     print(calc_good_put(recv_log))
