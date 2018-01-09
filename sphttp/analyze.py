@@ -39,7 +39,7 @@ def separate_log_for_each_host(log):
     r_log = {h: [] for h in host}
 
     for t, b, h in log:
-        r_log[h].append((t, b))
+        r_log[h].append((t, b, h))
 
     return r_log
 
