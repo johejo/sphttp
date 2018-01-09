@@ -24,7 +24,7 @@ class Downloader(object):
                  enable_trace_log=False,
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
-                 enable_dup_req=False,
+                 enable_dup_req=True,
                  dup_req_algo=DuplicateRequestAlgorithm.IBRC,
                  close_bad_conn=False,
                  static_delay_req_vals=None,
