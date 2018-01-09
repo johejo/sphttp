@@ -29,7 +29,6 @@ class Downloader(object):
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  invalid_block_count_threshold=10,
-                 similar_conn_raio=0.9,
                  init_delay_coef=10,
                  logger=local_logger):
 
@@ -41,16 +40,11 @@ class Downloader(object):
         self._dup_req_algo = dup_req_algo
         self._close_bad_conn = close_bad_conn
 
-        if 0 < similar_conn_raio <= 1:
-            self._similar_conn_ratio = similar_conn_raio
-        else:
-            self._similar_conn_ratio = 0.9
-
         self._logger = logger
 
         init_delay_coef = max(1, init_delay_coef)
 
-        length, raw_delays = async_get_length(urls)
+        length, self._raw_delays = async_get_length(urls)
 
         if match_all(length) is False:
             message = 'File size differs for each host.'
@@ -68,9 +62,9 @@ class Downloader(object):
         self._num_req = self.length // self._split_size
         reminder = self.length % self._split_size
 
-        min_delay = min(raw_delays.values())
+        min_delay = min(self._raw_delays.values())
         self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
-                            for url, delay in raw_delays.items()}
+                            for url, delay in self._raw_delays.items()}
 
         self._params = AnyPoppableDeque()
         begin = 0
@@ -139,7 +133,7 @@ class Downloader(object):
 
     def get_trace_log(self):
         if self._enable_trace_log:
-            return self._send_log, self._recv_log
+            return self._send_log, self._recv_log, self._init_delay
 
     def _send_req(self, conn_id):
 
