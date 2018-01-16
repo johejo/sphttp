@@ -365,6 +365,9 @@ class Downloader(object):
         else:
             return False
 
+    def __len__(self):
+        return self.length
+
     def __iter__(self):
         return self
 
