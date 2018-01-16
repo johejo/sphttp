@@ -23,12 +23,12 @@ class HTTP11Downloader(object):
                  enable_trace_log=False,
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
-                 enable_dup_req=False,
+                 enable_dup_req=True,
                  dup_req_algo=DuplicateRequestAlgorithm.IBRC,
                  close_bad_conn=False,
                  static_delay_req_vals=None,
+                 enable_init_delay=True,
                  invalid_block_count_threshold=10,
-                 similar_conn_raio=0.9,
                  init_delay_coef=10,
                  logger=local_logger):
 
@@ -39,17 +39,13 @@ class HTTP11Downloader(object):
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
         self._close_bad_sess = close_bad_conn
-
-        if 0 < similar_conn_raio <= 1:
-            self._similar_conn_ratio = similar_conn_raio
-        else:
-            self._similar_conn_ratio = 0.9
+        self._enable_init_delay = enable_init_delay
 
         self._logger = logger
 
         init_delay_coef = max(1, init_delay_coef)
 
-        length, raw_delays = async_get_length(urls)
+        length, self._raw_delays = async_get_length(urls)
 
         if match_all(length) is False:
             message = 'File size differs for each host.'
@@ -57,7 +53,7 @@ class HTTP11Downloader(object):
 
         self.length = length[0]
 
-        self._urls = [URL(url) for url in urls]
+        self._urls = [URL(url) for url in self._raw_delays.keys()]
 
         # create hyper connection
         # self._sessions = [HTTPConnection(host='{}:{}'.format(url.host, url.port),
@@ -69,9 +65,13 @@ class HTTP11Downloader(object):
         self._num_req = self.length // self._split_size
         reminder = self.length % self._split_size
 
-        min_delay = min(raw_delays.values())
-        self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
-                            for url, delay in raw_delays.items()}
+        if self._enable_init_delay:
+            min_delay = min(self._raw_delays.values())
+            self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
+                                for url, delay in self._raw_delays.items()}
+        else:
+            self._init_delay = {URL(url): 0
+                                for url in self._raw_delays.keys()}
 
         self._params = AnyPoppableDeque()
         begin = 0
@@ -140,7 +140,7 @@ class HTTP11Downloader(object):
 
     def get_trace_log(self):
         if self._enable_trace_log:
-            return self._send_log, self._recv_log
+            return self._send_log, self._recv_log, self._raw_delays
 
     def _send_req(self, sess_id):
 
@@ -160,7 +160,7 @@ class HTTP11Downloader(object):
 
             def _static_diff():
                 try:
-                    diff = self._static_delay_req_val[sess_id]
+                    diff = self._static_delay_req_val[url.human_repr()]
                 except KeyError:
                     diff = 0
 
@@ -254,7 +254,7 @@ class HTTP11Downloader(object):
                                .format(sess_id, param.block_id, self._current_time(), len(self._params)))
 
             if self._enable_trace_log:
-                self._send_log.append((self._current_time(), param.block_id))
+                self._send_log.append((self._current_time(), param.block_id, self._urls[sess_id].host))
 
             def get_block_id(range_header):
                 tmp = range_header.split(' ')
@@ -274,7 +274,7 @@ class HTTP11Downloader(object):
                                    .format(sess_id, block_id, self._current_time()))
 
                 if self._enable_trace_log:
-                    self._recv_log.append((self._current_time(), block_id))
+                    self._recv_log.append((self._current_time(), param.block_id, self._urls[sess_id].host))
 
                 self._host_usage_count[sess_id] += 1
                 self._receive_count += 1
@@ -349,6 +349,9 @@ class HTTP11Downloader(object):
             return True
         else:
             return False
+
+    def __len__(self):
+        return self.length
 
     def __iter__(self):
         return self
