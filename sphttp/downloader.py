@@ -54,7 +54,7 @@ class Downloader(object):
 
         self.length = length[0]
 
-        self._urls = [URL(url) for url in urls]
+        self._urls = [URL(url) for url in self._raw_delays.keys()]
 
         # create hyper connection
         self._conns = [HTTPConnection(host='{}:{}'.format(url.host, url.port),
@@ -271,7 +271,7 @@ class Downloader(object):
             raise SphttpConnectionError
 
         if resp.status != 206:
-            message = 'status_code: {}'.format(resp.status)
+            message = 'status_code: {}, url={}'.format(resp.status, self._urls[conn_id].host)
             raise StatusCodeError(message)
 
         block_id = get_block_id(resp.headers[b'Content-Range'][0].decode())
