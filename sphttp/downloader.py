@@ -28,6 +28,7 @@ class Downloader(object):
                  dup_req_algo=DuplicateRequestAlgorithm.IBRC,
                  close_bad_conn=False,
                  static_delay_req_vals=None,
+                 enable_init_delay=True,
                  invalid_block_count_threshold=10,
                  init_delay_coef=10,
                  logger=local_logger):
@@ -39,6 +40,7 @@ class Downloader(object):
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
         self._close_bad_conn = close_bad_conn
+        self._enable_init_delay = enable_init_delay
 
         self._logger = logger
 
@@ -62,9 +64,13 @@ class Downloader(object):
         self._num_req = self.length // self._split_size
         reminder = self.length % self._split_size
 
-        min_delay = min(self._raw_delays.values())
-        self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
-                            for url, delay in self._raw_delays.items()}
+        if self._enable_init_delay:
+            min_delay = min(self._raw_delays.values())
+            self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
+                                for url, delay in self._raw_delays.items()}
+        else:
+            self._init_delay = {URL(url): 0
+                                for url in self._raw_delays.keys()}
 
         self._params = AnyPoppableDeque()
         begin = 0
