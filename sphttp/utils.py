@@ -41,12 +41,12 @@ def async_get_length(urls):
 
                 # Redirects are not supported
                 if resp.status != 200:
-                    message = 'status={}'.format(resp.status)
+                    message = 'status={}, url={}'.format(resp.status, url)
                     raise StatusCodeError(message)
                 try:
                     length.append(int(resp.headers['Content-Length']))
                 except KeyError:
-                    message = 'Host does not support Content-Length header.'
+                    message = 'Host does not support Content-Length header. url={}'.format(url)
                     raise NoContentLength(message)
 
                 delays[url] = time.monotonic() - begin
