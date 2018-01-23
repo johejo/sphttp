@@ -110,28 +110,20 @@ def calc_good_put(recv_log):
 def calc_initial_buffering_time(recv_log):
     t_log, block_log, _ = separate_log(recv_log)
     finish_time = max(t_log)
-    ave_interval = finish_time / len(recv_log)
+    ave_itv = finish_time / len(recv_log)
 
-    initial_buffering = max([ti - (i * ave_interval) for i, (ti, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
-
-    return initial_buffering
+    return max([t - (i * ave_itv) for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
 
 
 def calc_ave_delay_time(recv_log):
     t_log, block_log, _ = separate_log(recv_log)
     finish_time = max(t_log)
-    ave_arrival_desired_interval = finish_time / len(recv_log)
+    ave_itv = finish_time / len(recv_log)
 
-    d = []
-    for i, (ti, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1])):
-        if ti > ave_arrival_desired_interval * i:
-            d.append(ti - ave_arrival_desired_interval * i)
-        else:
-            d.append(0)
+    # return mean([abs(t - ave_itv * i) for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
 
-    ave_delay_time = mean(d)
-
-    return ave_delay_time
+    return mean([t - ave_itv * i for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))
+                 if t - ave_itv * i >= 0])
 
 
 def get_throughput(recv_log, filesize):
