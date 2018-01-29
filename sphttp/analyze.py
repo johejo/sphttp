@@ -44,6 +44,31 @@ def separate_log_for_each_host(log):
     return r_log
 
 
+def get_invalid_block_log(recv_log):
+    block_log = get_block_log(recv_log)
+
+    buf = []  # Buffer for block ID
+    nsbib = []  # Number of staying blocks in buffer
+    rbi = 0  # Returned block ID
+
+    for block_id in block_log:
+        buf.append(block_id)
+        buf.sort()
+
+        i = 0
+        while i < len(buf):
+            if rbi == buf[i]:
+                buf.pop(i)
+                rbi += 1
+
+            else:
+                i += 1
+
+        nsbib.append(len(buf))
+
+    return nsbib
+
+
 def calc_num_staying_blocks(recv_log):
     block_log = get_block_log(recv_log)
 
@@ -113,6 +138,16 @@ def calc_initial_buffering_time(recv_log):
     ave_itv = finish_time / len(recv_log)
 
     return max([t - (i * ave_itv) for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
+
+
+def get_ave_delay_log(recv_log):
+    t_log, block_log, _ = separate_log(recv_log)
+    finish_time = max(t_log)
+    ave_itv = finish_time / len(recv_log)
+
+    # return mean([abs(t - ave_itv * i) for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
+
+    return [t - ave_itv * i if t - ave_itv * i >= 0 else 0 for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))]
 
 
 def calc_ave_delay_time(recv_log):

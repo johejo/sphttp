@@ -168,7 +168,7 @@ class Downloader(object):
             def _measure_diff():
 
                 diff = self._receive_count - self._previous_receive_count[conn_id]\
-                       - len(self._urls) + len(self._bad_conn_ids)
+                       - len(self._urls) + 1 + len(self._bad_conn_ids)
 
                 self._previous_receive_count[conn_id] = self._receive_count
 
