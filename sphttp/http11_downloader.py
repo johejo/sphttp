@@ -169,7 +169,7 @@ class HTTP11Downloader(object):
             def _measure_diff():
 
                 diff = self._receive_count - self._previous_receive_count[sess_id] \
-                       - len(self._urls) + len(self._bad_session_ids)
+                       - len(self._urls) + 1 + len(self._bad_session_ids)
 
                 self._previous_receive_count[sess_id] = self._receive_count
 
