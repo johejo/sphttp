@@ -55,14 +55,12 @@ def get_invalid_block_log(recv_log):
         buf.append(block_id)
         buf.sort()
 
-        i = 0
-        while i < len(buf):
-            if rbi == buf[i]:
-                buf.pop(i)
+        while len(buf):
+            if rbi == buf[0]:
+                del buf[0]
                 rbi += 1
-
             else:
-                i += 1
+                break
 
         nsbib.append(len(buf))
 

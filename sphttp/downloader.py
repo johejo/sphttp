@@ -29,13 +29,13 @@ class Downloader(object):
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  enable_init_delay=True,
-                 invalid_block_count_threshold=10,
+                 invalid_block_count_threshold=20,
                  init_delay_coef=10,
                  logger=local_logger):
 
         self._split_size = abs(split_size)
         self._verify = verify
-        self._invalid_block_count_threshold = max(10, invalid_block_count_threshold)
+        self._invalid_block_count_threshold = max(20, invalid_block_count_threshold)
         self._delay_req_algo = delay_req_algo
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
@@ -350,7 +350,7 @@ class Downloader(object):
             return self._concat_buf()
 
         if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
-            self._invalid_block_count = 0
+            self._invalid_block_count -= n - 1
 
         self._logger.debug('Return: bytes={}, num={}, read_index={}'
                            .format(b_len, n, self._read_index))
