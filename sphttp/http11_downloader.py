@@ -335,7 +335,7 @@ class HTTP11Downloader(object):
             return self._concat_buf()
 
         if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
-            self._invalid_block_count -= n
+            self._invalid_block_count -= n - 1
 
         self._logger.debug('Return: bytes={}, num={}, read_index={}'
                            .format(b_len, n, self._read_index))
