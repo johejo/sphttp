@@ -349,8 +349,8 @@ class Downloader(object):
             self._event.wait()
             return self._concat_buf()
 
-        if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
-            self._invalid_block_count -= n - 1
+        if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC and self._invalid_block_count:
+            self._invalid_block_count -= 1
 
         self._logger.debug('Return: bytes={}, num={}, read_index={}'
                            .format(b_len, n, self._read_index))
