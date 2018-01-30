@@ -328,18 +328,25 @@ class HTTP11Downloader(object):
         b_len = len(b)
 
         if b_len == 0:
-            if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
+            if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC or \
+                    self._dup_req_algo is DuplicateRequestAlgorithm.IBRC_X:
                 self._invalid_block_count += 1
+
             self._event.clear()
             self._event.wait()
             return self._concat_buf()
 
-        if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC and self._invalid_block_count:
-            self._invalid_block_count -= 1
+        else:
+            if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
+                self._invalid_block_count -= n - 1
+                self._invalid_block_count = max(self._invalid_block_count, 0)
 
-        self._logger.debug('Return: bytes={}, num={}, read_index={}'
-                           .format(b_len, n, self._read_index))
-        return bytes(b)
+            elif self._dup_req_algo is DuplicateRequestAlgorithm.IBRC_X:
+                self._invalid_block_count = 0
+
+            self._logger.debug('Return: bytes={}, num={}, read_index={}'
+                               .format(b_len, n, self._read_index))
+            return bytes(b)
 
     def _current_time(self):
         return time.monotonic() - self._begin_time
