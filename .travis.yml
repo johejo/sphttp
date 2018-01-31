@@ -7,9 +7,6 @@ notifications:
   email:
       - mitsuo_h@outlook.com
 
-before_install:
-    - curl --version
-
 install:
     - pip install -r requirements.txt
 
