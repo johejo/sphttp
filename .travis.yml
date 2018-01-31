@@ -4,13 +4,8 @@ notifications:
   email:
       - mitsuo_h@outlook.com
 
-addons:
-    apt:
-        packages:
-            - curl
-
 before_install:
     - curl --version
 
 script:
-    - $ curl -H "Content-Type: application/json" --data '{"build": true}' -X POST https://registry.hub.docker.com/u/johejo/sphttp-proxy/trigger/$DOCKER_HUB_TRIGGER_TOKEN/
+    - curl -H "Content-Type: application/json" --data '{"build": true}' -X POST https://registry.hub.docker.com/u/johejo/sphttp-proxy/trigger/$DOCKER_HUB_TRIGGER_TOKEN/
