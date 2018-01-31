@@ -1,12 +1,19 @@
-language: python
+service: docker
 
-python:
-    - "3.6"
+language: bash
+
+notifications:
+  email:
+      - mitsuo_h@outlook.com
 
 addons:
     apt:
         packages:
             - curl
 
+before_install:
+    - docker run --name latex -itd -v $PWD:/workdir johejo/debian-latex-jp:latest
+
 script:
-    - curl -H "Content-Type: application/json" --data '{"build": true}' -X POST https://registry.hub.docker.com/u/johejo/sphttp-proxy/trigger/$DOCKER_HUB_TRIGGER_TOKEN/
+    - docker exec latex bash build.sh
+- ./upload.sh
