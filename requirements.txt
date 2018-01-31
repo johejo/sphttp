@@ -1,0 +1,4 @@
+hyper>=0.7.0
+requests>=2.18.4
+yarl>=0.14.2
+aiohttp>=2.3.6
