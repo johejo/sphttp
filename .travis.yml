@@ -1,14 +1,14 @@
 language: python
 
 python:
-  - "3.6"
+    - "3.6"
 
 addons:
-  apt:
-    packages:
-      - curl
+    apt:
+        packages:
+            - curl
 
 script:
-  - curl -H "Content-Type: application/json" \
-         --data '{"build": true}' \
-         -X POST https://registry.hub.docker.com/u/johejo/sphttp-proxy/trigger/$DOCKER_HUB_TRIGGER_TOKEN/ \
+    - curl -H "Content-Type: application/json" \
+                --data '{"build": true}' \
+                -X POST https://registry.hub.docker.com/u/johejo/sphttp-proxy/trigger/$DOCKER_HUB_TRIGGER_TOKEN/ \
