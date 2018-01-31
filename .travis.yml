@@ -16,4 +16,4 @@ before_install:
 
 script:
     - docker exec latex bash build.sh
-- ./upload.sh
+    - ./upload.sh
