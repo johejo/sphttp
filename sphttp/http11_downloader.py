@@ -24,7 +24,7 @@ class HTTP11Downloader(object):
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
                  enable_dup_req=True,
-                 dup_req_algo=DuplicateRequestAlgorithm.IBRC,
+                 dup_req_algo=DuplicateRequestAlgorithm.NIBIB,
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  enable_init_delay=True,
