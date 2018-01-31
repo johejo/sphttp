@@ -1,5 +1,10 @@
 language: bash
 
+addons:
+  apt:
+    packages:
+      - curl
+
 script:
   - curl -H "Content-Type: application/json" \
          --data '{"build": true}' \
