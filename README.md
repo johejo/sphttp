@@ -65,6 +65,17 @@ This proxy gets the file separately from the URL included in the query and retur
 For original request senders this looks like a single HTTP request.  
 Don`t you think that playing a movie file as a network stream on VLC is fun!
 
+# Proxy
+
+You can quickly launch a sample of proxy server with nginx, uwsgi, and sphttp set using docker!
+
+```bash
+$ docker pull johejo/sphttp-proxy
+$ docker run --name sphttp -d -p 8080:80 johejo/sphttp-proxy
+```
+
+[docker hub](https://hub.docker.com/r/johejo/sphttp-proxy/)
+
 # Advanced
 
 ## Delay Request Algorithm
@@ -106,17 +117,22 @@ d = Downloader(urls, delay_req_algo=DelayRequestAlgorithm.STATIC, static_delay_r
 ## Duplicate Request Algorithm
 About duplicate request when delays of divided blocks occur
 
-
-
 ### How to select
+
 ```python
 from sphttp import Downloader, DuplicateRequestAlgorithm
 
-d = Downloader(urls, enable_dup_req=True, dup_req_algo=DuplicateRequestAlgorithm.IBRC, invalid_block_count_threshold=10)
+d = Downloader(urls, enable_dup_req=True, dup_req_algo=DuplicateRequestAlgorithm.NIBIB, invalid_block_count_threshold=30)
 ```
 
-IBRC: Based on invalid blocks received count (default)
+NIBIB: Based on the number of invalid blocks in the buffer (default)
 
-NIBIB: Based on the number of invalid blocks in the buffer
+The threshold value for duplicate request is 20 by default
 
-The threshold value for duplicate request is 10 by default
+## HTTP Session
+
+By standard, **sphttp.downloader.Downloader** is using [hyper](https://github.com/Lukasa/hyper) as HTTP Session.  (HTTP/2 is supported)  
+The downloader using [requests](https://github.com/requests/requests) as HTTP Session is **sphttp.http11_downloader.HTTP11Downloader** (this may be stupid)
+
+# License
+MIT
