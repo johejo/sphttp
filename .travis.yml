@@ -1,5 +1,3 @@
-service: docker
-
 language: bash
 
 notifications:
@@ -12,8 +10,7 @@ addons:
             - curl
 
 before_install:
-    - docker run --name latex -itd -v $PWD:/workdir johejo/debian-latex-jp:latest
+    - curl --version
 
 script:
-    - docker exec latex bash build.sh
-    - ./upload.sh
+    - $ curl -H "Content-Type: application/json" --data '{"build": true}' -X POST https://registry.hub.docker.com/u/johejo/sphttp-proxy/trigger/$DOCKER_HUB_TRIGGER_TOKEN/
