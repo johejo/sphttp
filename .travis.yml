@@ -3,6 +3,11 @@ language: python
 python:
   - "3.6"
 
+addons:
+  apt:
+    packages:
+      - curl
+
 script:
   - curl -H "Content-Type: application/json" \
          --data '{"build": true}' \
