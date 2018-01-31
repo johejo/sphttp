@@ -1,4 +1,7 @@
-language: generic
+language: python
+
+python:
+  - "3.6"
 
 script:
   - curl -H "Content-Type: application/json" \
