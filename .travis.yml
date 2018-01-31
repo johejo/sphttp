@@ -1,9 +1,4 @@
-language: bash
-
-addons:
-  apt:
-    packages:
-      - curl
+language: generic
 
 script:
   - curl -H "Content-Type: application/json" \
