@@ -99,7 +99,7 @@ DIFF: Measure the performance difference between the hosts and make a delay requ
 
 INV: The delay request width is determined by using an inverse proportional function from the ratio of the number of times of use for each host, and a delay request is made. (It will not be much better than DIFF)
 
-STATIC: By inputting the performance difference of the host in advance, an accurate delay request is made. (Although it is not realistic)
+STATIC: By inputting the performance difference of the host in advance, an accurate delay request is made.
 
 STATIC sample
 
@@ -109,8 +109,7 @@ from sphttp import Downloader, DelayRequestAlgorithm
 performance = {
     'https://example0.com/1GB.txt': 0,  # Set 0 to the most performance host
     'https://example0.com/1GB.txt': N,  # Set the reciprocal of the performance ratio with N with the best performance server. 
-                                        # Set 10 if the performance is 1/10 of the server like the most performance.
-}
+}                                       # Set 10 if the performance is 1/10 of the server like the most performance.
 
 d = Downloader(urls, delay_req_algo=DelayRequestAlgorithm.STATIC, static_delay_req_vals=performance)
 ```
@@ -126,9 +125,11 @@ from sphttp import Downloader, DuplicateRequestAlgorithm
 d = Downloader(urls, enable_dup_req=True, dup_req_algo=DuplicateRequestAlgorithm.NIBIB, invalid_block_count_threshold=30)
 ```
 
-NIBIB: Based on the number of invalid blocks in the buffer (default)
+NIBIB: Based on the number of invalid blocks in the buffer
 
-The threshold value for duplicate request is 20 by default
+IBRC: Based on the number of invalid blocks received (default and recommended)
+
+The threshold value for duplicate request is 20 by default.
 
 ## HTTP Session
 
