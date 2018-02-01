@@ -67,7 +67,8 @@ Don`t you think that playing a movie file as a network stream on VLC is fun!
 
 # Proxy
 
-You can quickly launch a sample of proxy server with nginx, uwsgi, and sphttp set using docker!
+You can quickly launch a sample of proxy server with nginx, uwsgi, and sphttp set using docker!  
+[sphttp-proxy](https://github.com/johejo/sphttp-proxy/)
 
 ```bash
 $ docker pull johejo/sphttp-proxy
