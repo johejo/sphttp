@@ -145,7 +145,8 @@ def get_ave_delay_log(recv_log):
 
     # return mean([abs(t - ave_itv * i) for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))])
 
-    return [t - ave_itv * i if t - ave_itv * i >= 0 else 0 for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))]
+    return [t - ave_itv * i if t - ave_itv * i >= 0 else None for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))]
+    # return [t - ave_itv * i for i, (t, _, _) in enumerate(sorted(recv_log, key=lambda x: x[1]))]
 
 
 def calc_ave_delay_time(recv_log):

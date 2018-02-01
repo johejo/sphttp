@@ -11,7 +11,7 @@ setup(
     version='0.1.0',
     author='Mitsuo Heijo',
     author_email='mitsuo_h@outlook.com',
-    description='HTTP split downloader for Python supporting HTTP/2',
+    description='HTTP split downloader for Python supporting multi source',
     long_description=readme,
     packages=find_packages(),
     license='MIT',

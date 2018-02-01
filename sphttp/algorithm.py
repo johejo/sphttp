@@ -10,5 +10,4 @@ class DelayRequestAlgorithm(Enum):
 
 class DuplicateRequestAlgorithm(Enum):
     IBRC = auto()
-    IBRC_X = auto()
     NIBIB = auto()

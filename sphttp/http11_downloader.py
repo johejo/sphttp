@@ -24,7 +24,7 @@ class HTTP11Downloader(object):
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
                  enable_dup_req=True,
-                 dup_req_algo=DuplicateRequestAlgorithm.NIBIB,
+                 dup_req_algo=DuplicateRequestAlgorithm.IBRC,
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  enable_init_delay=True,
@@ -328,8 +328,7 @@ class HTTP11Downloader(object):
         b_len = len(b)
 
         if b_len == 0:
-            if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC or \
-                    self._dup_req_algo is DuplicateRequestAlgorithm.IBRC_X:
+            if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
                 self._invalid_block_count += 1
 
             self._event.clear()
@@ -338,10 +337,6 @@ class HTTP11Downloader(object):
 
         else:
             if self._dup_req_algo is DuplicateRequestAlgorithm.IBRC:
-                self._invalid_block_count -= n - 1
-                self._invalid_block_count = max(self._invalid_block_count, 0)
-
-            elif self._dup_req_algo is DuplicateRequestAlgorithm.IBRC_X:
                 self._invalid_block_count = 0
 
             self._logger.debug('Return: bytes={}, num={}, read_index={}'
