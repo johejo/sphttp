@@ -8,7 +8,7 @@ from yarl import URL
 
 from .algorithm import DelayRequestAlgorithm, DuplicateRequestAlgorithm
 from .exception import FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError
-from .utils import match_all, SphttpFlowControlManager, async_get_length
+from .utils import match_all, async_get_length
 from .structures import AnyPoppableDeque, RangeRequestParam
 
 local_logger = getLogger(__name__)
