@@ -193,7 +193,7 @@ class CoreDownloader(object):
                     self._params.appendleft(self._previous_param[sess_id])
                 break
 
-            self._store_body(sess_id, range_header, body)
+            self._store_body(sess_id, range_header, memoryview(body))
 
         self._sessions[sess_id].close()
         self._logger.debug('Finish: sess_id={}'.format(sess_id))
@@ -276,7 +276,7 @@ class CoreDownloader(object):
     def _measure_diff(self, sess_id):
 
         diff = self._receive_count - self._previous_receive_count[sess_id] \
-               - len(self._urls) + 1 + len(self._bad_sess_ids)
+               - len(self._urls) + len(self._bad_sess_ids)
 
         self._previous_receive_count[sess_id] = self._receive_count
 
@@ -322,9 +322,9 @@ class CoreDownloader(object):
             if self._buf[i] is None:
                 break
             else:
-                b += self._buf[i]
+                b += bytes(self._buf[i])
+                self._buf[i].release()
                 self._buf[i] = True
-                n += 1
             i += 1
 
         with self._lock:
@@ -333,7 +333,7 @@ class CoreDownloader(object):
         if self._dup_req_algo is DuplicateRequestAlgorithm.NIBIB:
             c = 0
             for buf in self._buf:
-                if type(buf) is bytearray or type(buf) is bytes:
+                if type(buf) is memoryview or type(buf) is bytearray or type(buf) is bytes:
                     c += 1
 
             with self._lock:

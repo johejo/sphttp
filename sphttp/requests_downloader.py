@@ -1,21 +1,21 @@
-from hyper import HTTPConnection
 from logging import getLogger, NullHandler
+
+import requests
 
 from .core import CoreDownloader
 from .algorithm import DuplicateRequestAlgorithm, DelayRequestAlgorithm
-from .utils import SphttpFlowControlManager
-from .exception import SphttpConnectionError, StatusCodeError
+from .exception import StatusCodeError
 
 local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
 
 
-class HyperDownloader(CoreDownloader):
+class RequestsDownloader(CoreDownloader):
 
     def __init__(self,
                  urls,
                  *,
-                 split_size=10**6,
+                 split_size=10 ** 6,
                  enable_trace_log=False,
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
@@ -27,7 +27,7 @@ class HyperDownloader(CoreDownloader):
                  invalid_block_count_threshold=20,
                  init_delay_coef=10,
                  logger=local_logger):
-        
+
         super().__init__(urls,
                          split_size=split_size, enable_trace_log=enable_trace_log, verify=verify,
                          delay_req_algo=delay_req_algo, enable_dup_req=enable_dup_req, dup_req_algo=dup_req_algo,
@@ -37,18 +37,16 @@ class HyperDownloader(CoreDownloader):
                          logger=logger)
 
     def set_sessions(self):
-        for url in self._urls:
-            sess = HTTPConnection(host='{}:{}'.format(url.host, url.port),
-                                  window_manager=SphttpFlowControlManager,
-                                  verify=self._verify)
+        for _ in self._urls:
+            sess = requests.Session()
             self._sessions.append(sess)
 
     def request(self, sess_id, param):
-        
+
         sess = self._sessions[sess_id]
         url = self._urls[sess_id]
-        
-        sess.request('GET', url.path, headers=param.headers)
+
+        resp = sess.get(url.human_repr(), headers=param.headers, stream=True)
 
         self._logger.debug('Send request: sess_id={}, block_id={}, time={}, remain={}'
                            .format(sess_id, param.block_id, self._current_time(), len(self._params)))
@@ -56,14 +54,10 @@ class HyperDownloader(CoreDownloader):
         if self._enable_trace_log:
             self._send_log.append((self._current_time(), param.block_id, self._urls[sess_id].host))
 
-        try:
-            resp = sess.get_response()
-        except (ConnectionResetError, ConnectionAbortedError):
-            self._bad_sess_ids.add(sess_id)
-            raise SphttpConnectionError
-        
-        if resp.status != 206:
-            message = 'status_code: {}, url={}'.format(resp.status, self._urls[sess_id].host)
+        if resp.status_code != 206:
+            message = 'status_code: {}, url={}'.format(resp.status_code, self._urls[sess_id].host)
             raise StatusCodeError(message)
 
-        return resp.headers[b'Content-Range'][0], memoryview(resp.read())
+        range_header = resp.headers['Content-Range']
+
+        return range_header, memoryview(resp.content)
