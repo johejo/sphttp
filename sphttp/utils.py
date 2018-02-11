@@ -6,10 +6,9 @@ import aiohttp
 
 from .exception import StatusCodeError, NoContentLength
 
-REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
-
-# hyper's FlowControlManager does not perform very well in a high-throughput environment
+# hyper's FlowControlManager does not perform very well
+# in a high-throughput environment
 class SphttpFlowControlManager(BaseFlowControlManager):
 
     def increase_window_size(self, frame_size):
@@ -42,14 +41,16 @@ def async_get_length(urls):
                 try:
                     length.append(int(resp.headers['Content-Length']))
                 except KeyError:
-                    message = 'Host does not support Content-Length header. url={}'.format(url)
+                    message = 'Host does not support Content-Length header. ' \
+                              'url={}'.format(url)
                     raise NoContentLength(message)
 
                 delays[url] = time.monotonic() - begin
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(asyncio.wait([init_head_request(url) for url in urls]))
+    loop.run_until_complete(asyncio.wait([init_head_request(url)
+                                          for url in urls]))
 
     return length, delays
 

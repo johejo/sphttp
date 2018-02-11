@@ -7,22 +7,23 @@ from requests.exceptions import RequestException
 
 from .algorithm import DelayRequestAlgorithm, DuplicateRequestAlgorithm
 from .exception import (
-    FileSizeError, ParameterPositionError, DelayRequestAlgorithmError, SphttpConnectionError,
+    FileSizeError, ParameterPositionError,
+    DelayRequestAlgorithmError, SphttpConnectionError,
 )
 from .utils import match_all, async_get_length
-from .structures import AnyPoppableDeque, RangeRequestParam
+from .structures import AnyPoppableDeque, RangeParam
 
 local_logger = getLogger(__name__)
 local_logger.addHandler(NullHandler())
 
 
 # This is core downloader class.
-# Inherit this class and implement Downloader using various HTTP session libraries.
+# Inherit this class and implement Downloader using various HTTP libraries.
 class CoreDownloader(object):
     def __init__(self,
                  urls,
                  *,
-                 split_size=10**6,
+                 split_size=10 ** 6,
                  enable_trace_log=False,
                  verify=True,
                  delay_req_algo=DelayRequestAlgorithm.DIFF,
@@ -37,12 +38,13 @@ class CoreDownloader(object):
 
         self._split_size = abs(split_size)
         self._verify = verify
-        self._invalid_block_count_threshold = max(20, invalid_block_count_threshold)
+        self._threshold = max(20, invalid_block_count_threshold)
         self._delay_req_algo = delay_req_algo
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
         self._close_bad_conn = close_bad_conn
         self._enable_init_delay = enable_init_delay
+        self._coef = init_delay_coef
 
         self._logger = logger
 
@@ -62,30 +64,36 @@ class CoreDownloader(object):
         reminder = self.length % self._split_size
 
         if self._enable_init_delay:
-            min_delay = min(self._raw_delays.values())
-            self._init_delay = {URL(url): (int((delay / min_delay) - 1) * init_delay_coef)
-                                for url, delay in self._raw_delays.items()}
+            min_d = min(self._raw_delays.values())
+            self._init_delay = {URL(u): int(((d / min_d - 1) *
+                                             init_delay_coef))
+                                for u, d in self._raw_delays.items()}
         else:
-            self._init_delay = {URL(url): 0
-                                for url in self._raw_delays.keys()}
+            self._init_delay = {URL(u): 0
+                                for u in self._raw_delays.keys()}
 
         self._params = AnyPoppableDeque()
         begin = 0
 
         for block_id in range(self._num_req):
-            self._params.append(RangeRequestParam(block_id, {'Range': 'bytes={0}-{1}'
-                                                  .format(begin, begin + self._split_size - 1)}))
+            end = begin + self._split_size - 1
+            param = RangeParam(block_id,
+                               {'Range': 'bytes={0}-{1}'.format(begin, end)})
+            self._params.append(param)
             begin += self._split_size
 
         if reminder:
-            self._params.append(RangeRequestParam(self._num_req, {'Range': 'bytes={0}-{1}'
-                                                  .format(begin, begin + reminder - 1)}))
+            end = begin + reminder - 1
+            param = RangeParam(self._num_req,
+                               {'Range': 'bytes={0}-{1}'.format(begin, end)})
+            self._params.append(param)
             self._num_req += 1
 
         num_hosts = len(self._urls)
 
-        self._threads = [Thread(target=self._download, args=(sess_id,), name=str(sess_id))
-                         for sess_id in range(num_hosts)]
+        self._threads = [
+            Thread(target=self._download, args=(sess_id,), name=str(sess_id))
+            for sess_id in range(num_hosts)]
         self._buf = [None] * self._num_req
         self._is_started = False
         self._read_index = 0
@@ -97,9 +105,10 @@ class CoreDownloader(object):
         self._receive_count = 0
         self._host_usage_count = [0] * num_hosts
         self._previous_receive_count = [0] * num_hosts
-        self._previous_param = [RangeRequestParam() for _ in self._urls]
+        self._previous_param = [RangeParam() for _ in self._urls]
 
-        if self._delay_req_algo is DelayRequestAlgorithm.STATIC and static_delay_req_vals:
+        if self._delay_req_algo is DelayRequestAlgorithm.STATIC and \
+                static_delay_req_vals:
             self._static_delay_req_val = static_delay_req_vals
 
         self._enable_trace_log = enable_trace_log
@@ -159,33 +168,39 @@ class CoreDownloader(object):
         while not self._is_completed():
             if sess_id in self._bad_sess_ids or not len(self._params):
                 break
-                
+
             if self._check_bad_sess(sess_id):
                 bad_sess_id, param = self._sent_block_param[self._read_index]
 
                 if self._close_bad_conn:
                     self._bad_sess_ids.add(bad_sess_id)
 
-                self._logger.debug('Duplicate request: sess_id={}, bad_sess_id={}, block_id={}, invalid_block_count={}'
-                                   .format(sess_id, bad_sess_id, param.block_id, self._invalid_block_count))
+                self._logger.debug('Duplicate request: sess_id={}, '
+                                   'bad_sess_id={}, block_id={}, '
+                                   'invalid_block_count={}'
+                                   .format(sess_id, bad_sess_id,
+                                           param.block_id,
+                                           self._invalid_block_count))
 
             else:
                 try:
                     param = self._get_param(sess_id)
                 except ParameterPositionError:
-                    self._logger.debug('ParameterError: sess_id={}'.format(sess_id))
+                    self._logger.debug(
+                        'ParameterError: sess_id={}'.format(sess_id))
                     break
 
                 self._previous_param[sess_id] = param
 
                 with self._lock:
                     self._sent_block_param[param.block_id] = (sess_id, param)
-            
+
             try:
                 range_header, body = self.request(sess_id, param)
 
             except (RequestException, SphttpConnectionError):
-                self._logger.debug('Connection abort: sess_id={}, url={}'.format(sess_id, self._urls[sess_id]))
+                self._logger.debug('Connection abort: sess_id={}, url={}'
+                                   .format(sess_id, self._urls[sess_id]))
                 self._host_usage_count[sess_id] = 0
 
                 failed_block_id = self._previous_param[sess_id].block_id
@@ -213,10 +228,12 @@ class CoreDownloader(object):
             self._buf[block_id] = body
             self._event.set()
             self._logger.debug('Get chunk: sess_id={}, block_id={}, time={}'
-                               .format(sess_id, block_id, self._current_time()))
+                               .format(sess_id, block_id,
+                                       self._current_time()))
 
             if self._enable_trace_log:
-                self._recv_log.append((self._current_time(), block_id, self._urls[sess_id].host))
+                self._recv_log.append((self._current_time(), block_id,
+                                       self._urls[sess_id].host))
 
             self._host_usage_count[sess_id] += 1
 
@@ -224,9 +241,11 @@ class CoreDownloader(object):
                 self._receive_count += 1
 
     def _check_bad_sess(self, sess_id):
-        
-        if self._enable_dup_req and self._should_send_dup_req() and self._is_conn_perf_highest(sess_id) \
-                and self._buf[self._read_index] is None and self._sent_block_param[self._read_index] is not None:
+
+        if self._enable_dup_req and self._should_send_dup_req() \
+                and self._is_conn_perf_highest(sess_id) \
+                and self._buf[self._read_index] is None \
+                and self._sent_block_param[self._read_index] is not None:
             return True
         else:
             return False
@@ -289,7 +308,8 @@ class CoreDownloader(object):
 
     def _calc_inverse(self, sess_id):
         try:
-            ratio = self._host_usage_count[sess_id] / max(self._host_usage_count)
+            ratio = self._host_usage_count[sess_id] / max(
+                self._host_usage_count)
         except ZeroDivisionError:
             ratio = 1
 
@@ -301,13 +321,14 @@ class CoreDownloader(object):
         return min(self._num_req - self._read_index, p)
 
     def _should_send_dup_req(self):
-        if self._invalid_block_count > self._invalid_block_count_threshold:
+        if self._invalid_block_count > self._threshold:
             return True
         else:
             return False
 
     def _is_conn_perf_highest(self, sess_id):
-        if sess_id == self._host_usage_count.index(max(self._host_usage_count)):
+        if sess_id == self._host_usage_count.index(
+                max(self._host_usage_count)):
             return True
         else:
             return False
@@ -333,7 +354,8 @@ class CoreDownloader(object):
         if self._dup_req_algo is DuplicateRequestAlgorithm.NIBIB:
             c = 0
             for buf in self._buf:
-                if type(buf) is memoryview or type(buf) is bytearray or type(buf) is bytes:
+                if type(buf) is memoryview or type(buf) is bytearray or type(
+                        buf) is bytes:
                     c += 1
 
             with self._lock:

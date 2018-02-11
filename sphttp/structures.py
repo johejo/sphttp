@@ -11,7 +11,7 @@ class AnyPoppableDeque(deque):
         return value
 
 
-class RangeRequestParam(object):
+class RangeParam(object):
     def __init__(self, block_id=None, headers=None):
         self.block_id = block_id
         self.headers = headers

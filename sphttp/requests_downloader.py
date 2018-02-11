@@ -29,11 +29,17 @@ class RequestsDownloader(CoreDownloader):
                  logger=local_logger):
 
         super().__init__(urls,
-                         split_size=split_size, enable_trace_log=enable_trace_log, verify=verify,
-                         delay_req_algo=delay_req_algo, enable_dup_req=enable_dup_req, dup_req_algo=dup_req_algo,
-                         close_bad_conn=close_bad_conn, static_delay_req_vals=static_delay_req_vals,
-                         enable_init_delay=enable_init_delay, init_delay_coef=init_delay_coef,
-                         invalid_block_count_threshold=invalid_block_count_threshold,
+                         split_size=split_size,
+                         enable_trace_log=enable_trace_log, verify=verify,
+                         delay_req_algo=delay_req_algo,
+                         enable_dup_req=enable_dup_req,
+                         dup_req_algo=dup_req_algo,
+                         close_bad_conn=close_bad_conn,
+                         static_delay_req_vals=static_delay_req_vals,
+                         enable_init_delay=enable_init_delay,
+                         init_delay_coef=init_delay_coef,
+                         invalid_block_count_threshold=
+                         invalid_block_count_threshold,
                          logger=logger)
 
     def set_sessions(self):
@@ -48,16 +54,18 @@ class RequestsDownloader(CoreDownloader):
 
         resp = sess.get(url.human_repr(), headers=param.headers, stream=True)
 
-        self._logger.debug('Send request: sess_id={}, block_id={}, time={}, remain={}'
-                           .format(sess_id, param.block_id, self._current_time(), len(self._params)))
+        self._logger.debug('Send request: sess_id={}, '
+                           'block_id={}, time={}, remain={}'
+                           .format(sess_id, param.block_id,
+                                   self._current_time(), len(self._params)))
 
         if self._enable_trace_log:
-            self._send_log.append((self._current_time(), param.block_id, self._urls[sess_id].host))
+            self._send_log.append((self._current_time(), param.block_id,
+                                   self._urls[sess_id].host))
 
         if resp.status_code != 206:
-            message = 'status_code: {}, url={}'.format(resp.status_code, self._urls[sess_id].host)
+            message = 'status: {}, url={}'.format(resp.status_code,
+                                                  self._urls[sess_id].host)
             raise StatusCodeError(message)
 
-        range_header = resp.headers['Content-Range']
-
-        return range_header, memoryview(resp.content)
+        return resp.headers['Content-Range'], memoryview(resp.content)
