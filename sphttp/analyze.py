@@ -8,13 +8,14 @@
 
 from statistics import mean, stdev
 import pickle
+from collections import deque
 
 
 def open_log(filename):
     with open(filename, 'rb') as f:
-        log = pickle.load(f)
+        raw_log = pickle.load(f)
 
-    return log
+    return raw_log
 
 
 def get_t_log(log):
@@ -136,8 +137,7 @@ def calc_initial_buffering_time(recv_log):
     ave_itv = finish_time / len(recv_log)
 
     return max([t - (i * ave_itv)
-                for i, (t, _, _) in enumerate(sorted(recv_log,
-                                                     key=lambda x: x[1]))])
+                for i, (t, _, _) in enumerate(sorted_by_block(recv_log))])
 
 
 def get_ave_delay_log(recv_log):
@@ -146,8 +146,7 @@ def get_ave_delay_log(recv_log):
     ave_itv = finish_time / len(recv_log)
 
     return [t - ave_itv * i if t - ave_itv * i >= 0 else None
-            for i, (t, _, _) in enumerate(sorted(recv_log,
-                                                 key=lambda x: x[1]))]
+            for i, (t, _, _) in enumerate(sorted_by_block(recv_log))]
 
 
 def calc_ave_delay_time(recv_log):
@@ -156,9 +155,12 @@ def calc_ave_delay_time(recv_log):
     ave_itv = finish_time / len(recv_log)
 
     return mean([t - ave_itv * i
-                 for i, (t, _, _) in enumerate(sorted(recv_log,
-                                                      key=lambda x: x[1]))
+                 for i, (t, _, _) in enumerate(sorted_by_block(recv_log))
                  if t - ave_itv * i >= 0])
+
+
+def sorted_by_block(sr_log):
+    return sorted(sr_log, key=lambda x: x[1])
 
 
 def get_throughput(recv_log, filesize):
@@ -168,8 +170,42 @@ def get_throughput(recv_log, filesize):
     return thp
 
 
+def pick_dup_send(send_log):
+
+    n = 0
+    y = deque()
+    for t, bi, _ in send_log:
+        if bi != n:
+            y.pop()
+        else:
+            n += 1
+        y.append((t, bi, _))
+    return list(y)
+
+
+def calc_intervals(send_log, recv_log):
+    # return {sh: mean(rt - st)
+    #         for (st, _, sh), (rt, _, _) in
+    #         zip(sorted_by_block(send_log), sorted_by_block(recv_log))}
+
+    x = {h: [] for h in set([sh for _, _, sh in send_log])}
+
+    for (st, _, sh), (rt, _, _) in \
+            zip(pick_dup_send(sorted_by_block(send_log)),
+                sorted_by_block(recv_log)):
+        x[sh].append(rt - st)
+
+    return {k: mean(v) for k, v in x.items()}
+
+
 # Test
 def __test():
+    send_log = [
+        (0, 0, 'hoge.com'), (1, 1, 'foo.com'), (2, 2, 'hoge.com'),
+        (3, 3, 'hoge.com'), (4, 4, 'bar.com'), (5, 5, 'hoge.com'),
+        (6, 6, 'hoge.com'), (7, 7, 'hoge.com'), (8, 8, 'hoge.com'),
+    ]
+
     recv_log = [
         (1, 1, 'hoge.com'), (2, 0, 'foo.com'), (3, 2, 'hoge.com'),
         (4, 5, 'hoge.com'), (5, 7, 'bar.com'), (6, 8, 'hoge.com'),
@@ -180,6 +216,7 @@ def __test():
     print(calc_good_put(recv_log))
     print(calc_initial_buffering_time(recv_log))
     print(calc_ave_delay_time(recv_log))
+    print(calc_intervals(send_log, recv_log))
 
 
 if __name__ == '__main__':
