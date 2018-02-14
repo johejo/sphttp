@@ -24,7 +24,7 @@ class RequestsDownloader(CoreDownloader):
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  enable_init_delay=True,
-                 invalid_block_count_threshold=20,
+                 invalid_block_threshold=20,
                  init_delay_coef=10,
                  logger=local_logger):
 
@@ -38,8 +38,7 @@ class RequestsDownloader(CoreDownloader):
                          static_delay_req_vals=static_delay_req_vals,
                          enable_init_delay=enable_init_delay,
                          init_delay_coef=init_delay_coef,
-                         invalid_block_count_threshold=
-                         invalid_block_count_threshold,
+                         invalid_block_threshold=invalid_block_threshold,
                          logger=logger)
 
     def set_sessions(self):

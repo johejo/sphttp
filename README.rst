@@ -155,7 +155,7 @@ How to select
 
     from sphttp import Downloader, DuplicateRequestAlgorithm
 
-    d = Downloader(urls, enable_dup_req=True, dup_req_algo=DuplicateRequestAlgorithm.NIBIB, invalid_block_count_threshold=30)
+    d = Downloader(urls, enable_dup_req=True, dup_req_algo=DuplicateRequestAlgorithm.NIBIB, invalid_block_threshold=30)
 
 NIBIB: Based on the number of invalid blocks in the buffer
 

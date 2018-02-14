@@ -32,13 +32,13 @@ class CoreDownloader(object):
                  close_bad_conn=False,
                  static_delay_req_vals=None,
                  enable_init_delay=True,
-                 invalid_block_count_threshold=20,
+                 invalid_block_threshold=20,
                  init_delay_coef=10,
                  logger=local_logger):
 
         self._split_size = abs(split_size)
         self._verify = verify
-        self._threshold = max(20, invalid_block_count_threshold)
+        self._invalid_block_threshold = max(20, invalid_block_threshold)
         self._delay_req_algo = delay_req_algo
         self._enable_dup_req = enable_dup_req
         self._dup_req_algo = dup_req_algo
@@ -107,8 +107,8 @@ class CoreDownloader(object):
         self._previous_receive_count = [0] * num_hosts
         self._previous_param = [RangeParam() for _ in self._urls]
 
-        if self._delay_req_algo is DelayRequestAlgorithm.STATIC and \
-                static_delay_req_vals:
+        if self._delay_req_algo is DelayRequestAlgorithm.STATIC \
+                and static_delay_req_vals:
             self._static_delay_req_val = static_delay_req_vals
 
         self._enable_trace_log = enable_trace_log
@@ -294,8 +294,8 @@ class CoreDownloader(object):
 
     def _measure_diff(self, sess_id):
 
-        diff = self._receive_count - self._previous_receive_count[sess_id] \
-               - len(self._urls) + len(self._bad_sess_ids)
+        d = self._receive_count - self._previous_receive_count[sess_id]
+        diff = d - len(self._urls) + len(self._bad_sess_ids)
 
         self._previous_receive_count[sess_id] = self._receive_count
 
@@ -321,7 +321,7 @@ class CoreDownloader(object):
         return min(self._num_req - self._read_index, p)
 
     def _should_send_dup_req(self):
-        if self._invalid_block_count > self._threshold:
+        if self._invalid_block_count > self._invalid_block_threshold:
             return True
         else:
             return False
@@ -354,8 +354,7 @@ class CoreDownloader(object):
         if self._dup_req_algo is DuplicateRequestAlgorithm.NIBIB:
             c = 0
             for buf in self._buf:
-                if type(buf) is memoryview or type(buf) is bytearray or type(
-                        buf) is bytes:
+                if type(buf) is memoryview:
                     c += 1
 
             with self._lock:

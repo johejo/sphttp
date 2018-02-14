@@ -1,23 +1,23 @@
-# Functions for log analysis
+# Functions for log analysis of sphttp
 
 # The log format is a tuple of time, received block ID and hostname.
-# It is recommended that to read and execute "__test ()"
+# It is recommended that to read and execute "__test()"
 # to check the behavior of each function.
 
 # An event
 # (t, block_id, hostname)
 
-# A log is list of events
+# A log is list of event
 
 # sr_log means "send_log or recv_log"
 
 
-from statistics import mean, median
+from statistics import mean, median, stdev
 import pickle
 from collections import deque
 
 
-def open_log(filename):
+def open_pickled(filename):
     with open(filename, 'rb') as f:
         pickled = pickle.load(f)
 
@@ -72,8 +72,20 @@ def get_invalid_block_log(recv_log):
     return nsbib
 
 
-def get_num_simul_return_block_log(recv_log):
-    _, block_log, _ = separate_log(recv_log)
+def calc_mean_num_invalid_block(recv_log):
+    return mean(get_invalid_block_log(recv_log))
+
+
+def calc_med_num_invalid_block(recv_log):
+    return median(get_invalid_block_log(recv_log))
+
+
+def calc_stdev_num_invalid_block(recv_log):
+    return stdev(get_invalid_block_log(recv_log))
+
+
+def get_simul_ret_block_log(recv_log):
+    block_log = get_block_log(recv_log)
 
     buf = []  # Buffer for block ID
     rbi = 0  # Returned block ID
@@ -99,15 +111,63 @@ def get_num_simul_return_block_log(recv_log):
     return nsrb
 
 
+def calc_mean_num_simul_ret_block(recv_log):
+    return mean(get_simul_ret_block_log(recv_log))
+
+
+def calc_med_num_simul_ret_block(recv_log):
+    return median(get_simul_ret_block_log(recv_log))
+
+
+def calc_stdev_num_simul_ret_block(recv_log):
+    return stdev(get_simul_ret_block_log(recv_log))
+
+
 def calc_init_buffering_time(recv_log):
     return max(get_delay_time_log(recv_log))
 
 
+def calc_ideal_interval(recv_log):
+    return max(get_time_log(recv_log)) / len(recv_log)
+
+
 def get_delay_time_log(recv_log):
-    ideal_interval = max(get_time_log(recv_log)) / len(recv_log)
+    ideal_interval = calc_ideal_interval(recv_log)
 
     return [t - ideal_interval * i
             for i, (t, _, _) in enumerate(sorted_by_block(recv_log))]
+
+
+def removed_neg_delay_time_log(recv_log):
+    return [d if d >= 0 else None for d in get_delay_time_log(recv_log)]
+
+
+def get_posi_delay_time_log(recv_log):
+    return [d for d in get_delay_time_log(recv_log) if d >= 0]
+
+
+def calc_mean_posi_delay_time(recv_log):
+    return mean(get_posi_delay_time_log(recv_log))
+
+
+def calc_med_posi_delay_time(recv_log):
+    return median(get_posi_delay_time_log(recv_log))
+
+
+def calc_stdev_posi_delay_time(recv_log):
+    return stdev(get_posi_delay_time_log(recv_log))
+
+
+def calc_mean_delay_time(recv_log):
+    return mean(get_delay_time_log(recv_log))
+
+
+def calc_med_delay_time(recv_log):
+    return median(get_delay_time_log(recv_log))
+
+
+def calc_stdev_delay_time(recv_log):
+    return stdev(get_delay_time_log(recv_log))
 
 
 def sorted_by_block(sr_log):
@@ -121,7 +181,7 @@ def calc_goodput(recv_log, filesize, opt=10**6):
     return thp
 
 
-def pick_dup_send(send_log):
+def removed_dup_send_log(send_log):
     n = 0
     y = deque()
     for t, bi, _ in send_log:
@@ -134,25 +194,55 @@ def pick_dup_send(send_log):
     return list(y)
 
 
-def calc_avg_block_arr_interval(send_log, recv_log):
+def get_mean_block_arr_interval(send_log, recv_log):
     return {k: mean(v)
             for k, v in get_block_arr_interval(send_log, recv_log).items()}
 
 
-def calc_med_block_arr_interval(send_log, recv_log):
+def get_med_block_arr_interval(send_log, recv_log):
     return {k: median(v)
+            for k, v in get_block_arr_interval(send_log, recv_log).items()}
+
+
+def get_stdev_block_arr_interval(send_log, recv_log):
+    return {k: stdev(v)
             for k, v in get_block_arr_interval(send_log, recv_log).items()}
 
 
 def get_block_arr_interval(send_log, recv_log):
     dic = {h: [] for h in set([sh for _, _, sh in send_log])}
 
-    for (st, _, sh), (rt, _, _) in \
-            zip(pick_dup_send(sorted_by_block(send_log)),
-                sorted_by_block(recv_log)):
+    for (st, _, sh), (rt, _, _) in zip(
+            removed_dup_send_log(sorted_by_block(send_log)),
+            sorted_by_block(recv_log)):
         dic[sh].append(rt - st)
 
     return dic
+
+
+def get_ret_evt_log(recv_log):
+    ibl = get_invalid_block_log(recv_log)
+
+    return [ti for i, (ti, ibli) in enumerate(zip(get_time_log(recv_log), ibl))
+            if i > 0 and ibl[i - 1] > ibli]
+
+
+def get_ret_evt_interval_log(recv_log):
+    rel = get_ret_evt_log(recv_log)
+
+    return [reli - rel[i - 1] for i, reli in enumerate(rel) if i > 0]
+
+
+def calc_mean_ret_evt_interval(recv_log):
+    return mean(get_ret_evt_interval_log(recv_log))
+
+
+def calc_med_ret_evt_interval(recv_log):
+    return median(get_ret_evt_interval_log(recv_log))
+
+
+def calc_stdev_ret_evt_interval(recv_log):
+    return stdev(get_ret_evt_interval_log(recv_log))
 
 
 # Test
@@ -175,11 +265,9 @@ def __test():
     print('RECV LOG')
     print(recv_log)
 
-    print(get_num_simul_return_block_log(recv_log))
+    print(get_simul_ret_block_log(recv_log))
     print(calc_goodput(recv_log, 100))
     print(calc_init_buffering_time(recv_log))
-    print(calc_avg_block_arr_interval(send_log, recv_log))
-    print(calc_med_block_arr_interval(send_log, recv_log))
     print(get_block_arr_interval(send_log, recv_log))
 
 
