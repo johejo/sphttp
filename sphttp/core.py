@@ -60,7 +60,7 @@ class CoreDownloader(object):
 
         self._urls = [URL(url) for url in self._raw_delays.keys()]
 
-        self._num_req = self.length // self._split_size
+        self._num_req = int(self.length // self._split_size)
         reminder = self.length % self._split_size
 
         if self._enable_init_delay:
