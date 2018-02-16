@@ -94,12 +94,12 @@ class CoreDownloader(object):
         self._threads = [
             Thread(target=self._download, args=(sess_id,), name=str(sess_id))
             for sess_id in range(num_hosts)]
-        self._buf = [None] * self._num_req
+        self._buf = [None for _ in range(self._num_req)]
         self._is_started = False
         self._read_index = 0
         self._initial = [True] * num_hosts
         self._invalid_block_count = 0
-        self._sent_block_param = [None] * self._num_req
+        self._sent_block_param = [(None, None) for _ in range(self._num_req)]
         self._bad_sess_ids = set()
 
         self._receive_count = 0
@@ -343,7 +343,7 @@ class CoreDownloader(object):
             if self._buf[i] is None:
                 break
             else:
-                b += bytes(self._buf[i])
+                b += self._buf[i].tobytes()
                 self._buf[i].release()
                 self._buf[i] = True
             i += 1
